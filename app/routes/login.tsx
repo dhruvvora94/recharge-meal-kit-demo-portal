@@ -10,7 +10,7 @@ import {
   startPasswordlessLogin,
 } from "~/lib/auth.server";
 
-export const meta: MetaFunction = () => [{ title: "Sign in — Recharge Meals" }];
+export const meta: MetaFunction = () => [{ title: "Sign in — Walden Local" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const auth = await getOptionalCustomer(request);
@@ -74,27 +74,22 @@ export default function LoginPage() {
   const required = reason === "required";
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center px-4 py-10 relative overflow-hidden">
-      <div className="pointer-events-none absolute -top-32 -right-24 w-[28rem] h-[28rem] rounded-full bg-brand-200/50 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 -left-24 w-[26rem] h-[26rem] rounded-full bg-accent/15 blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 bg-grain opacity-60" />
+    <div className="min-h-screen bg-cream flex flex-col">
+      <div className="bg-gold-light py-1 text-center text-[13px] font-medium text-ink">Recharge demo environment</div>
+      <div className="bg-forest h-[72px] flex items-center justify-center">
+        <img src="/walden-logo.svg" alt="Walden Local" className="h-[52px]" />
+      </div>
+      <div className="flex-1 flex items-start justify-center px-4 pt-16 pb-10">
 
       <div className="relative w-full max-w-md animate-fade-in">
-        <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-warm-lg border border-stone-100 p-8 sm:p-10">
-          <div className="flex justify-center mb-6">
-            <img
-              src="/logo.png"
-              alt="Recharge Meals"
-              className="h-14 sm:h-16 w-auto"
-            />
-          </div>
+        <div className="bg-white rounded-lg border border-line shadow-card p-8 sm:p-10">
 
           <div className="text-center mb-7">
-            <h1 className="text-2xl sm:text-[28px] font-display font-bold text-stone-900 tracking-tight">
+            <h1 className="text-[34px] font-[900] uppercase tracking-[-0.02em] text-ink">
               Welcome back
             </h1>
             <p className="text-stone-500 mt-1.5 text-sm">
-              Sign in to manage your upcoming deliveries.
+              Sign in to My Walden to manage your upcoming deliveries.
             </p>
           </div>
 
@@ -118,13 +113,13 @@ export default function LoginPage() {
                 defaultValue={pendingEmail}
                 autoFocus
                 required
-                className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition-shadow"
+                className="w-full rounded border border-line bg-white px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-forest-700/30 focus:border-forest-700 transition-shadow"
               />
               <p className="mt-2 text-xs text-stone-500">
                 We&apos;ll email you a 6-digit code to confirm it&apos;s you.
               </p>
             </div>
-            <button type="submit" disabled={isSubmitting} className="btn-primary w-full py-3.5">
+            <button type="submit" disabled={isSubmitting} className="btn-forest-lg w-full rounded-full">
               {isSubmitting ? (
                 <>
                   <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -150,12 +145,13 @@ export default function LoginPage() {
         </div>
 
         <div className="mt-6 flex items-center justify-center gap-4 text-xs text-stone-400">
-          <span>Real food. Real fuel. Delivered.</span>
+          <span>Pasture-raised meat, delivered by our own vans.</span>
           <span aria-hidden="true">·</span>
-          <Link to="/merchant" className="hover:text-brand-700 transition-colors">
+          <Link to="/merchant" className="hover:text-forest-700 transition-colors">
             Merchant portal →
           </Link>
         </div>
+      </div>
       </div>
     </div>
   );

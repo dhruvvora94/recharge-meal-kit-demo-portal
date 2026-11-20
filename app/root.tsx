@@ -14,6 +14,7 @@ export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
   { rel: "stylesheet", href: stylesheet },
+  { rel: "icon", href: "/walden-logo.svg", type: "image/svg+xml" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -25,7 +26,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Meta />
         <Links />
       </head>
-      <body className="h-full bg-cream bg-grain font-body text-stone-800 antialiased">
+      <body className="min-h-full bg-white font-sans text-ink antialiased">
         {children}
         <ScrollRestoration />
         <Scripts />

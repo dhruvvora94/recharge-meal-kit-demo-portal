@@ -192,3 +192,21 @@ export async function setCustomerTags(shopifyCustomerId: string, tags: string[])
     customer: { id: Number(shopifyCustomerId), tags: tags.join(", ") },
   });
 }
+
+// ─── Collections (Walden shop) ─────────────────────────────────────────────────
+// Custom + smart collections with titles, for the Walden "Shop" tabs.
+
+export async function listShopCollections(): Promise<ShopifyCollection[]> {
+  const [custom, smart] = await Promise.all([
+    shopifyFetch<{ custom_collections: unknown[] }>(
+      `/custom_collections.json?fields=id,title,handle&published_status=published&limit=250`
+    ),
+    shopifyFetch<{ smart_collections: unknown[] }>(
+      `/smart_collections.json?fields=id,title,handle&published_status=published&limit=250`
+    ),
+  ]);
+  return [
+    ...z.array(ShopifyCollectionSchema).parse(custom.custom_collections),
+    ...z.array(ShopifyCollectionSchema).parse(smart.smart_collections),
+  ];
+}

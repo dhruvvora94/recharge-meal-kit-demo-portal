@@ -18,7 +18,7 @@ if (!storeIdentifier) {
 initRecharge({
   storeIdentifier,
   storefrontAccessToken: storefrontAccessToken || undefined,
-  appName: "future-charge-manipulation-demo-portal",
+  appName: "walden-local-demo-portal",
 });
 
 // Recharge issues ~1h tokens. Use 55 min as a conservative TTL so the cookie's
@@ -45,8 +45,10 @@ export type ResolvedCustomerSession = {
   email: string;
 };
 
-const DEMO_BYPASS_EMAIL = "demo-customer@rechargeapps.com";
-const DEMO_BYPASS_CUSTOMER_ID = "252481964";
+// Demo shortcut: signing in with DEMO_BYPASS_EMAIL skips the email code and
+// opens DEMO_CUSTOMER_ID (set both in .env for the Walden store).
+const DEMO_BYPASS_EMAIL = (process.env.DEMO_BYPASS_EMAIL ?? "demo-customer@rechargeapps.com").toLowerCase();
+const DEMO_BYPASS_CUSTOMER_ID = process.env.DEMO_CUSTOMER_ID ?? "252481964";
 // The demo-bypass session carries this placeholder in place of a real,
 // Recharge-issued customer apiToken. Storefront-client SDK calls authenticate
 // with the customer token, so they cannot be made from a demo-bypass session.

@@ -8,7 +8,7 @@ import {
   startPasswordlessLogin,
 } from "~/lib/auth.server";
 
-export const meta: MetaFunction = () => [{ title: "Verify code — Recharge Meals" }];
+export const meta: MetaFunction = () => [{ title: "Verify code — Walden Local" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const cookie = await getSession(request.headers.get("Cookie"));
@@ -90,23 +90,18 @@ export default function VerifyPage() {
   const isResending = navigation.state === "submitting" && submittedIntent === "resend";
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center px-4 py-10 relative overflow-hidden">
-      <div className="pointer-events-none absolute -top-32 -right-24 w-[28rem] h-[28rem] rounded-full bg-brand-200/50 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 -left-24 w-[26rem] h-[26rem] rounded-full bg-accent/15 blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 bg-grain opacity-60" />
+    <div className="min-h-screen bg-cream flex flex-col">
+      <div className="bg-gold-light py-1 text-center text-[13px] font-medium text-ink">Recharge demo environment</div>
+      <div className="bg-forest h-[72px] flex items-center justify-center">
+        <img src="/walden-logo.svg" alt="Walden Local" className="h-[52px]" />
+      </div>
+      <div className="flex-1 flex items-start justify-center px-4 pt-16 pb-10">
 
       <div className="relative w-full max-w-md animate-fade-in">
-        <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-warm-lg border border-stone-100 p-8 sm:p-10">
-          <div className="flex justify-center mb-6">
-            <img
-              src="/logo.png"
-              alt="Recharge Meals"
-              className="h-14 sm:h-16 w-auto"
-            />
-          </div>
+        <div className="bg-white rounded-lg border border-line shadow-card p-8 sm:p-10">
 
           <div className="text-center mb-7">
-            <h1 className="text-2xl sm:text-[28px] font-display font-bold text-stone-900 tracking-tight">
+            <h1 className="text-[34px] font-[900] uppercase tracking-[-0.02em] text-ink">
               Check your inbox
             </h1>
             <p className="text-stone-500 mt-1.5 text-sm">
@@ -116,7 +111,7 @@ export default function VerifyPage() {
             <p className="mt-2 text-xs text-stone-400">
               <Link
                 to={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
-                className="hover:text-brand-700 transition-colors"
+                className="hover:text-forest-700 transition-colors"
               >
                 ← Use a different email
               </Link>
@@ -146,10 +141,10 @@ export default function VerifyPage() {
                 autoFocus
                 required
                 maxLength={8}
-                className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-center text-lg font-mono tracking-[0.4em] text-stone-800 placeholder:text-stone-300 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition-shadow"
+                className="w-full rounded border border-line bg-white px-4 py-3 text-center text-lg font-mono tracking-[0.4em] text-stone-800 placeholder:text-stone-300 focus:outline-none focus:ring-2 focus:ring-forest-700/30 focus:border-forest-700 transition-shadow"
               />
             </div>
-            <button type="submit" disabled={isVerifying} className="btn-primary w-full py-3.5">
+            <button type="submit" disabled={isVerifying} className="btn-forest-lg w-full rounded-full">
               {isVerifying ? (
                 <>
                   <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -169,7 +164,7 @@ export default function VerifyPage() {
             <button
               type="submit"
               disabled={isResending}
-              className="w-full text-sm text-stone-500 hover:text-brand-700 transition-colors py-2 disabled:opacity-50"
+              className="w-full text-sm text-stone-500 hover:text-forest-700 transition-colors py-2 disabled:opacity-50"
             >
               {isResending ? "Resending…" : "Didn't get it? Resend code"}
             </button>
@@ -186,8 +181,9 @@ export default function VerifyPage() {
         </div>
 
         <div className="mt-6 text-center text-xs text-stone-400">
-          Real food. Real fuel. Delivered.
+          Pasture-raised meat, delivered by our own vans.
         </div>
+      </div>
       </div>
     </div>
   );

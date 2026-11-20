@@ -1,44 +1,60 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@keyframes shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
-}
-
-@keyframes footerIn {
-  0%   { opacity: 0; transform: translateY(40px); }
-  55%  { opacity: 1; transform: translateY(-6px); }
-  75%  { transform: translateY(3px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
 
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-
   body {
-    font-family: "Inter", system-ui, sans-serif;
-  }
-
-  /* Override Tailwind-generated cream — config changes require server restart, CSS does not */
-  .bg-cream { background-color: #FAF9F7 !important; }
-  .bg-cream-dark { background-color: #F3F0EC !important; }
-  .hover\:bg-cream-dark\/50:hover { background-color: rgba(243,240,236,0.5) !important; }
-
-  h1, h2, h3, h4, h5, h6 {
-    font-family: "DM Sans", system-ui, sans-serif;
+    @apply font-sans text-ink bg-white;
   }
 }
 
 @layer components {
+  /* Solid green action, e.g. "Change Delivery Date", "Skip Order" */
+  .btn-forest {
+    @apply inline-flex items-center justify-center rounded bg-forest-700 px-3 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-forest-lg {
+    @apply inline-flex items-center justify-center rounded bg-forest px-5 py-3 text-[17px] font-medium text-white transition-colors hover:bg-forest-900 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  /* Orange action, e.g. "Continue", "Go Back", "Add a plan +" */
+  .btn-carrot {
+    @apply inline-flex items-center justify-center rounded bg-carrot px-5 py-3 text-[17px] font-medium text-white transition-colors hover:bg-carrot-dark disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  /* Underlined green text link, e.g. "Manage Plan", "Edit", "Change Address" */
+  .link-forest {
+    @apply text-forest-700 underline underline-offset-2 decoration-1 hover:text-forest-900 font-medium;
+  }
+  .link-carrot {
+    @apply text-carrot hover:text-carrot-dark;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em];
+  }
+  .field {
+    @apply w-full rounded-[3px] border border-line bg-white px-4 py-3 text-[16px] text-ink outline-none transition-colors focus:border-forest-700;
+  }
+  .field-label {
+    @apply mb-2 block text-[13px] font-bold uppercase tracking-wide;
+  }
+  .select-chevron {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23141414' stroke-width='1.6'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 16px;
+    appearance: none;
+    padding-right: 2.5rem;
+  }
+}
+/* ── Legacy component classes (merchant + account pages) ── */
+@layer components {
   .bg-grain {
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.015'/%3E%3C/svg%3E");
+    background-image: none;
   }
 
   .card {

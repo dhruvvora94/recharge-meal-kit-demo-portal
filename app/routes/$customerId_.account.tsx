@@ -2,6 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remi
 import { json, redirect } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
+import { PageShell } from "~/components/walden/Layout";
 import {
   activateSubscription,
   cancelSubscription,
@@ -21,7 +22,7 @@ import {
 } from "~/lib/auth.server";
 import type { Address, Customer, PaymentMethod, Subscription } from "~/lib/types";
 
-export const meta: MetaFunction = () => [{ title: "NourishBox — My Account" }];
+export const meta: MetaFunction = () => [{ title: "My Account | Walden Local" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -203,27 +204,16 @@ export default function AccountPage() {
   const [paymentEmailSent, setPaymentEmailSent] = useState<number | null>(null);
 
   return (
-    <div className="min-h-screen bg-cream bg-grain">
-      <header className="bg-white border-b border-stone-200">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-3">
-          <Link
-            to={`/${customer.id}`}
-            className="p-1.5 rounded-md text-stone-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-            </svg>
-          </Link>
-          <h1 className="font-display font-semibold text-xl text-stone-900">My Account</h1>
-        </div>
-      </header>
-
+    <PageShell customerId={String(customer.id)} tone="cream">
+      <div className="mx-auto max-w-3xl px-4 pt-11">
+        <h1 className="text-[42px] font-[900] uppercase leading-none tracking-[-0.03em]">My Account</h1>
+      </div>
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* ── Profile ── */}
         <section className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <svg className="w-5 h-5 text-forest-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
               </svg>
               <h2 className="font-display font-semibold text-stone-900">Profile</h2>
@@ -231,7 +221,7 @@ export default function AccountPage() {
             <button
               type="button"
               onClick={() => setEditingProfile(true)}
-              className="text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors"
+              className="text-sm font-medium text-forest-700 hover:text-forest-900 transition-colors"
             >
               Edit
             </button>
@@ -245,7 +235,7 @@ export default function AccountPage() {
         {/* ── Payment Methods ── */}
         <section className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
           <div className="flex items-center gap-2 px-6 py-4 border-b border-stone-100">
-            <svg className="w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <svg className="w-5 h-5 text-forest-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25h-15a2.25 2.25 0 0 0-2.25 2.25v10.5a2.25 2.25 0 0 0 2.25 2.25Z" />
             </svg>
             <h2 className="font-display font-semibold text-stone-900">Payment Methods</h2>
@@ -284,7 +274,7 @@ export default function AccountPage() {
                       <button
                         type="button"
                         onClick={() => setUpdatingPayment(pm)}
-                        className="text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                        className="text-sm font-medium text-forest-700 hover:text-forest-900 transition-colors"
                       >
                         Update
                       </button>
@@ -304,7 +294,7 @@ export default function AccountPage() {
         {/* ── Shipping Addresses ── */}
         <section className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
           <div className="flex items-center gap-2 px-6 py-4 border-b border-stone-100">
-            <svg className="w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <svg className="w-5 h-5 text-forest-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
             </svg>
@@ -333,7 +323,7 @@ export default function AccountPage() {
                   <button
                     type="button"
                     onClick={() => setEditingAddress(addr)}
-                    className="text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors shrink-0"
+                    className="text-sm font-medium text-forest-700 hover:text-forest-900 transition-colors shrink-0"
                   >
                     Edit
                   </button>
@@ -363,7 +353,7 @@ export default function AccountPage() {
           }}
         />
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -410,7 +400,7 @@ function SubscriptionSection({
   return (
     <section className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
       <div className="flex items-center gap-2 px-6 py-4 border-b border-stone-100">
-        <svg className="w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <svg className="w-5 h-5 text-forest-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
         </svg>
         <h2 className="font-display font-semibold text-stone-900">Subscription</h2>
@@ -430,7 +420,7 @@ function SubscriptionSection({
                 type="button"
                 onClick={() => setConfirmingCancel(true)}
                 disabled={busy}
-                className="shrink-0 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-60"
+                className="shrink-0 text-sm font-medium text-forest-700 hover:text-forest-900 transition-colors disabled:opacity-60"
               >
                 Cancel subscription
               </button>
@@ -441,7 +431,7 @@ function SubscriptionSection({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-60"
+                  className="text-sm font-medium text-forest-700 hover:text-forest-900 transition-colors disabled:opacity-60"
                 >
                   {busy && submittingIntent === "cancel_subscription" ? "Starting…" : "Cancel subscription"}
                 </button>

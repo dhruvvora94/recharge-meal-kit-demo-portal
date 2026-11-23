@@ -20,6 +20,7 @@ import {
 import {
   getProductsByVariantIds,
   getSellingPlanDiscounts,
+  getZipDeliveryDates,
   listShopCollections,
   type SellingPlanDiscount,
   type ShopifyProduct,
@@ -37,6 +38,7 @@ import {
   toIsoDate,
   type DateSettings,
 } from "./dates";
+import { basePriceOn, subscribePrice as subscribePriceOf, type PriceWindow } from "./pricing";
 import type {
   AddressVM,
   DeliveryOptionVM,
@@ -92,27 +94,45 @@ function frequencyLabel(s: Subscription | undefined): string {
 }
 
 // ─── Delivery calendar (R-01 / R-02) ─────────────────────────────────────────
-// PLACEHOLDER until Walden's zip-zone calendar is wired in (Shopify metaobjects
-// synced from Walden Core). For now each zip gets the order's current delivery
-// date plus the same weekday ±1 week within that month, i.e. 2–3 dates/month,
-// excluding anything whose edit deadline has already passed.
+// Valid dates come from the Shopify metaobject `zip_based_delivery_dates`
+// (handle = ZIP). A member can move an order to any planned date for their ZIP
+// in the same month, as long as that date's edit deadline hasn't passed. The
+// order's current date is always listed (flagged if it isn't a planned date).
+
+export type ZipCalendar = { zip: string | null; dates: string[] | null };
 
 export function getDeliveryOptions(
-  _zip: string | null,
+  calendar: ZipCalendar,
   currentDeliveryIso: string,
   settings: DateSettings
-): DeliveryOptionVM[] {
+): Omit<DeliveryOptionVM, "estimatedTotal">[] {
   const month = currentDeliveryIso.slice(0, 7);
-  const candidates = [-7, 0, 7]
-    .map((offset) => addDays(currentDeliveryIso, offset))
-    .filter((d) => d.slice(0, 7) === month);
-  return candidates
+  const today = toIsoDate(new Date());
+  const planned = (calendar.dates ?? []).filter((d) => d.slice(0, 7) === month);
+  const dates = [...new Set([currentDeliveryIso, ...planned])].sort();
+  return dates
     .map((deliveryDate) => ({
       deliveryDate,
       chargeDate: chargeDateFromDelivery(deliveryDate, settings),
       editDeadline: editDeadlineFromDelivery(deliveryDate, settings),
+      isCurrent: deliveryDate === currentDeliveryIso,
+      valid: planned.includes(deliveryDate),
     }))
-    .filter((o) => o.deliveryDate === currentDeliveryIso || !isPastDeadline(o.editDeadline));
+    .filter((o) => o.isCurrent || (!isPastDeadline(o.editDeadline) && o.chargeDate > today));
+}
+
+/** Zip calendars for every address on the account, fetched once. */
+async function loadZipCalendars(addresses: Address[]): Promise<Map<string, ZipCalendar>> {
+  const zips = [...new Set(addresses.map((a) => (a.zip ?? "").trim().slice(0, 5)).filter((z) => /^\d{5}$/.test(z)))];
+  const entries = await Promise.all(
+    zips.map(async (zip) => [zip, { zip, dates: await getZipDeliveryDates(zip).catch(() => null) }] as const)
+  );
+  return new Map(entries);
+}
+
+export function calendarFor(calendars: Map<string, ZipCalendar>, zip: string | null | undefined): ZipCalendar {
+  const z = (zip ?? "").trim().slice(0, 5);
+  return calendars.get(z) ?? { zip: z || null, dates: null };
 }
 
 // ─── Customer context ─────────────────────────────────────────────────────────
@@ -124,12 +144,21 @@ export function isBundleSubscription(s: Subscription | undefined, bundleProductI
 
 type Selections = Awaited<ReturnType<typeof listBundleSelectionsByPurchaseItemIds>>;
 /** A bundle item; `price` is Recharge's stored per-item price when it has one. */
-type Content = { variantId: string; quantity: number; price: number | null };
-const toContent = (i: { external_variant_id: string; quantity: number; price?: string | null }): Content => ({
-  variantId: i.external_variant_id,
-  quantity: i.quantity,
-  price: i.price != null && i.price !== "" ? money(i.price) : null,
-});
+/**
+ * A bundle item. `price` is Recharge's stored per-item price; `source` says
+ * where it came from. Only a charge-level selection's price is what that
+ * delivery will actually charge — subscription defaults were priced at
+ * checkout and don't follow Walden's dated prices.
+ */
+type Content = { variantId: string; quantity: number; price: number | null; source: "charge" | "default" | "variant" };
+const toContent =
+  (source: Content["source"]) =>
+  (i: { external_variant_id: string; quantity: number; price?: string | null }): Content => ({
+    variantId: i.external_variant_id,
+    quantity: i.quantity,
+    price: i.price != null && i.price !== "" ? money(i.price) : null,
+    source,
+  });
 
 export type PortalContext = {
   subscriptions: Subscription[];
@@ -142,6 +171,7 @@ export type PortalContext = {
   selections: Selections;
   products: Map<string, ShopifyProduct>;
   discounts: Map<string, SellingPlanDiscount[]>;
+  zipCalendars: Map<string, ZipCalendar>;
 };
 
 export async function loadPortalContext(customerId: string): Promise<PortalContext> {
@@ -170,9 +200,10 @@ export async function loadPortalContext(customerId: string): Promise<PortalConte
   const productIds = new Set<string>();
   subscriptions.forEach((s) => s.external_product_id?.ecommerce && productIds.add(s.external_product_id.ecommerce));
 
-  const [products, discounts] = await Promise.all([
+  const [products, discounts, zipCalendars] = await Promise.all([
     getProductsByVariantIds([...variantIds]).catch(() => new Map<string, ShopifyProduct>()),
     getSellingPlanDiscounts([...productIds]).catch(() => new Map<string, SellingPlanDiscount[]>()),
+    loadZipCalendars(addresses),
   ]);
 
   return {
@@ -186,6 +217,7 @@ export async function loadPortalContext(customerId: string): Promise<PortalConte
     selections,
     products,
     discounts,
+    zipCalendars,
   };
 }
 
@@ -198,9 +230,7 @@ export function discountPctFor(ctx: PortalContext, sub: Subscription | undefined
   return plan?.percentage ?? 0;
 }
 
-export function subscribePrice(listPrice: number, pct: number): number {
-  return money(listPrice * (1 - pct / 100));
-}
+export { subscribePriceOf as subscribePrice };
 
 /** Bundle contents for a charge: charge selection → subscription default → variant defaults. */
 export function contentsFor(ctx: PortalContext, chargeId: number | null, sub: Subscription): Content[] {
@@ -208,13 +238,13 @@ export function contentsFor(ctx: PortalContext, chargeId: number | null, sub: Su
     chargeId != null
       ? ctx.selections.chargeSelections.find((cs) => cs.chargeId === chargeId && cs.selection.purchase_item_id === sub.id)
       : undefined;
-  if (chargeSel) return chargeSel.selection.items.map(toContent);
+  if (chargeSel) return chargeSel.selection.items.map(toContent("charge"));
   const def = ctx.selections.defaultsByPurchaseItem.get(sub.id);
-  if (def?.items.length) return def.items.map(toContent);
+  if (def?.items.length) return def.items.map(toContent("default"));
   return (
     ctx.bundleProducts.flatMap((p) => p.variants).find((v) => v.external_variant_id === sub.external_variant_id?.ecommerce)
       ?.selection_defaults ?? []
-  ).map(toContent);
+  ).map(toContent("variant"));
 }
 
 /**
@@ -248,21 +278,41 @@ export function dateSettingsFor(bundleSub: Subscription | null | undefined): Dat
 
 // ─── Line builders ────────────────────────────────────────────────────────────
 
-function listPriceOf(ctx: PortalContext, variantId: string | null | undefined): number | null {
-  if (!variantId) return null;
-  const v = ctx.products.get(variantId)?.variants.find((x) => String(x.id) === variantId);
-  return v?.price != null ? money(v.price) : null;
+function variantOf(ctx: PortalContext, variantId: string | null | undefined) {
+  if (!variantId) return undefined;
+  return ctx.products.get(variantId)?.variants.find((x) => String(x.id) === variantId);
 }
 
-function withList(line: Omit<LineVM, "listUnitPrice">, list: number | null): LineVM {
-  return { ...line, listUnitPrice: list != null && list - line.unitPrice > 0.004 ? list : null };
+/** Walden base price for a variant on a delivery date (price windows → Shopify price). */
+export function basePriceFor(ctx: PortalContext, variantId: string | null | undefined, deliveryIso: string): number | null {
+  const v = variantOf(ctx, variantId);
+  if (!v) return null;
+  return basePriceOn(v.price_windows as PriceWindow[] | undefined, deliveryIso, money(v.price));
 }
 
-function chargeLine(ctx: PortalContext, li: ChargeLineItem): LineVM {
+/** What an item should cost on a delivery date: one-time = base; subscription = base less plan %. */
+function intendedUnit(base: number, subscription: boolean, pct: number): number {
+  return subscription ? subscribePriceOf(base, pct) : base;
+}
+
+const differs = (a: number, b: number) => Math.abs(a - b) > 0.004;
+
+function finishLine(line: Omit<LineVM, "listUnitPrice" | "pendingUnitPrice">, base: number | null, intended: number | null): LineVM {
+  return {
+    ...line,
+    listUnitPrice: base != null && differs(base, line.unitPrice) && base > line.unitPrice ? base : null,
+    pendingUnitPrice: intended != null && differs(intended, line.unitPrice) ? intended : null,
+  };
+}
+
+/** A real charge line: shows what Recharge will charge; flags it if Walden's dated price differs. */
+function chargeLine(ctx: PortalContext, li: ChargeLineItem, deliveryIso: string, pct: number): LineVM {
   const unit = money(li.unit_price);
   const variantId = li.external_variant_id?.ecommerce ?? null;
   const product = variantId ? ctx.products.get(variantId) : undefined;
-  return withList(
+  const subscription = li.purchase_item_type === "subscription";
+  const base = basePriceFor(ctx, variantId, deliveryIso);
+  return finishLine(
     {
       key: `${li.purchase_item_type ?? "item"}-${li.purchase_item_id}-${variantId ?? li.title}`,
       title: li.title,
@@ -273,20 +323,22 @@ function chargeLine(ctx: PortalContext, li: ChargeLineItem): LineVM {
       imageUrl: li.images?.small ?? li.images?.medium ?? product?.image?.src ?? null,
       externalVariantId: variantId,
       purchaseItemId: li.purchase_item_id,
-      subscription: li.purchase_item_type === "subscription",
+      subscription,
     },
-    listPriceOf(ctx, variantId)
+    base,
+    base != null ? intendedUnit(base, subscription, pct) : null
   );
 }
 
-function variantLine(ctx: PortalContext, c: Content, pct: number, keyPrefix: string): LineVM | null {
+/** A bundle item. A charge-level selection price is what Recharge will charge; otherwise the dated price. */
+function variantLine(ctx: PortalContext, c: Content, pct: number, keyPrefix: string, deliveryIso: string): LineVM | null {
   const product = ctx.products.get(c.variantId);
-  const variant = product?.variants.find((v) => String(v.id) === c.variantId);
+  const variant = variantOf(ctx, c.variantId);
   if (!product || !variant) return null;
-  const list = money(variant.price);
-  // Recharge's stored item price wins; otherwise the bundle plan's price.
-  const unit = c.price ?? subscribePrice(list, pct);
-  return withList(
+  const base = basePriceFor(ctx, c.variantId, deliveryIso)!;
+  const intended = intendedUnit(base, true, pct);
+  const unit = c.source === "charge" && c.price != null ? c.price : intended;
+  return finishLine(
     {
       key: `${keyPrefix}-${c.variantId}`,
       title: product.title,
@@ -299,15 +351,16 @@ function variantLine(ctx: PortalContext, c: Content, pct: number, keyPrefix: str
       purchaseItemId: null,
       subscription: true,
     },
-    list
+    base,
+    intended
   );
 }
 
-function subscriptionLine(ctx: PortalContext, s: Subscription): LineVM {
-  const list = money(s.price);
-  const unit = subscribePrice(list, discountPctFor(ctx, s));
+function subscriptionLine(ctx: PortalContext, s: Subscription, deliveryIso: string): LineVM {
   const variantId = s.external_variant_id?.ecommerce ?? null;
-  return withList(
+  const base = basePriceFor(ctx, variantId, deliveryIso) ?? money(s.price);
+  const unit = subscribePriceOf(base, discountPctFor(ctx, s));
+  return finishLine(
     {
       key: `subscription-${s.id}`,
       title: s.product_title,
@@ -320,19 +373,31 @@ function subscriptionLine(ctx: PortalContext, s: Subscription): LineVM {
       purchaseItemId: s.id,
       subscription: true,
     },
-    list
+    base,
+    unit
   );
 }
 
-function expandBundle(ctx: PortalContext, chargeId: number | null, sub: Subscription): LineVM[] {
+function expandBundle(ctx: PortalContext, chargeId: number | null, sub: Subscription, deliveryIso: string): LineVM[] {
   const pct = discountPctFor(ctx, sub);
   return contentsFor(ctx, chargeId, sub)
-    .map((c) => variantLine(ctx, c, pct, `bundle-${sub.id}`))
+    .map((c) => variantLine(ctx, c, pct, `bundle-${sub.id}`, deliveryIso))
     .filter((l): l is LineVM => l !== null);
 }
 
 const savingsOf = (lines: LineVM[]) =>
   money(lines.reduce((s, l) => s + (l.listUnitPrice != null ? (l.listUnitPrice - l.unitPrice) * l.quantity : 0), 0));
+
+/** Estimated total if the same items were delivered on another date (R-04: show old vs new). */
+function totalOn(ctx: PortalContext, lines: LineVM[], deliveryIso: string, pct: number): number {
+  return money(
+    lines.reduce((sum, l) => {
+      const base = basePriceFor(ctx, l.externalVariantId, deliveryIso);
+      const unit = base != null ? intendedUnit(base, l.subscription, pct) : l.unitPrice;
+      return sum + unit * l.quantity;
+    }, 0)
+  );
+}
 
 // ─── Upcoming orders ──────────────────────────────────────────────────────────
 
@@ -349,10 +414,14 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
     const subscriptionLines: LineVM[] = [];
     const expanded = new Set<number>();
     const bundleSub = bundleSubscriptionForCharge(ctx, charge);
+    const settings = dateSettingsFor(bundleSub);
+    const deliveryDate = deliveryDateFromCharge(charge.scheduled_at, settings);
+    const firstSub = bundleSub ?? ctx.subById.get(charge.line_items.find((li) => li.purchase_item_type === "subscription")?.purchase_item_id ?? -1);
+    const pct = discountPctFor(ctx, firstSub);
 
     for (const li of charge.line_items) {
       if (li.purchase_item_type === "onetime") {
-        oneTimePicks.push(chargeLine(ctx, li));
+        oneTimePicks.push(chargeLine(ctx, li, deliveryDate, 0));
         continue;
       }
       const sub = ctx.subById.get(li.purchase_item_id);
@@ -363,27 +432,26 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
         isBundleSubscription(sub, ctx.bundleProductIds) &&
         li.external_product_id?.ecommerce === sub!.external_product_id?.ecommerce;
       if (isParentLine) {
-        if (!expanded.has(sub!.id)) subscriptionLines.push(...expandBundle(ctx, charge.id, sub!));
+        if (!expanded.has(sub!.id)) subscriptionLines.push(...expandBundle(ctx, charge.id, sub!, deliveryDate));
         expanded.add(sub!.id);
       } else {
-        subscriptionLines.push(chargeLine(ctx, li));
+        subscriptionLines.push(chargeLine(ctx, li, deliveryDate, pct));
       }
     }
 
     if (charge.line_items.length === 0) {
       for (const sub of subscriptionsForDraftCharge(ctx, charge)) {
-        if (isBundleSubscription(sub, ctx.bundleProductIds)) subscriptionLines.push(...expandBundle(ctx, charge.id, sub));
-        else subscriptionLines.push(subscriptionLine(ctx, sub));
+        if (isBundleSubscription(sub, ctx.bundleProductIds)) subscriptionLines.push(...expandBundle(ctx, charge.id, sub, deliveryDate));
+        else subscriptionLines.push(subscriptionLine(ctx, sub, deliveryDate));
       }
     }
 
-    const linesTotal = money([...oneTimePicks, ...subscriptionLines].reduce((sum, l) => sum + l.lineTotal, 0));
-    const estimatedTotal = money(charge.total_price) || linesTotal;
-    const settings = dateSettingsFor(bundleSub);
-    const deliveryDate = deliveryDateFromCharge(charge.scheduled_at, settings);
+    const allLines = [...oneTimePicks, ...subscriptionLines];
+    const linesTotal = money(allLines.reduce((sum, l) => sum + l.lineTotal, 0));
+    // A real charge's total is Recharge's; a $0 draft is estimated from the lines.
+    const estimatedTotal = charge.line_items.length ? money(charge.total_price) || linesTotal : linesTotal;
     const editDeadline = editDeadlineFromDelivery(deliveryDate, settings);
     const address = charge.address_id != null ? ctx.addressById.get(charge.address_id) ?? null : null;
-    const firstSub = bundleSub ?? ctx.subById.get(charge.line_items.find((li) => li.purchase_item_type === "subscription")?.purchase_item_id ?? -1);
 
     return {
       chargeId: charge.id,
@@ -397,12 +465,23 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
       currency: charge.currency ?? "USD",
       orderMinimum: WALDEN.orderMinimum,
       belowMinimum: charge.status === "queued" && estimatedTotal < WALDEN.orderMinimum,
-      subscribeDiscountPct: discountPctFor(ctx, firstSub),
+      subscribeDiscountPct: pct,
       savings: savingsOf(subscriptionLines),
+      pricePending: allLines.some((l) => l.pendingUnitPrice != null),
+      needsPricing:
+        charge.status === "queued" &&
+        charge.line_items.length === 0 &&
+        !!bundleSub &&
+        !ctx.selections.chargeSelections.some((cs) => cs.chargeId === charge.id && cs.selection.purchase_item_id === bundleSub.id),
       oneTimePicks,
       subscriptions: subscriptionLines,
       address,
-      deliveryOptions: getDeliveryOptions(address?.zip ?? null, deliveryDate, settings),
+      deliveryDateValid: !!calendarFor(ctx.zipCalendars, address?.zip).dates?.includes(deliveryDate),
+      zipHasCalendar: calendarFor(ctx.zipCalendars, address?.zip).dates != null,
+      deliveryOptions: getDeliveryOptions(calendarFor(ctx.zipCalendars, address?.zip), deliveryDate, settings).map((o) => ({
+        ...o,
+        estimatedTotal: o.deliveryDate === deliveryDate ? estimatedTotal : totalOn(ctx, allLines, o.deliveryDate, pct),
+      })),
     };
   });
 
@@ -419,14 +498,21 @@ export async function buildPlans(customerId: string): Promise<{ plans: PlanVM[];
 
   // What a bundle plan ships next: content lines on its next priced charge,
   // else its default contents.
+  // Plans are priced for their next delivery date.
+  const nextDeliveryFor = (sub: Subscription): string => {
+    const next = ctx.charges.find((c) => c.status === "queued" && (c.address_id === sub.address_id || c.line_items.some((li) => li.purchase_item_id === sub.id)));
+    const chargeIso = next?.scheduled_at ?? sub.next_charge_scheduled_at ?? toIsoDate(new Date());
+    return deliveryDateFromCharge(chargeIso, dateSettingsFor(sub));
+  };
   const planContents = (sub: Subscription): LineVM[] => {
     const next = ctx.charges.find(
       (c) => c.status === "queued" && c.line_items.some((li) => li.purchase_item_id === sub.id)
     );
+    const deliveryIso = nextDeliveryFor(sub);
     const lines = (next?.line_items ?? [])
       .filter((li) => li.purchase_item_id === sub.id && li.external_product_id?.ecommerce !== sub.external_product_id?.ecommerce)
-      .map((li) => chargeLine(ctx, li));
-    return lines.length ? lines : expandBundle(ctx, next?.id ?? null, sub);
+      .map((li) => chargeLine(ctx, li, deliveryIso, discountPctFor(ctx, sub)));
+    return lines.length ? lines : expandBundle(ctx, next?.id ?? null, sub, deliveryIso);
   };
 
   // A plan is anchored on a bundle subscription; item subscriptions at the same
@@ -442,7 +528,7 @@ export async function buildPlans(customerId: string): Promise<{ plans: PlanVM[];
     address: ctx.addressById.get(anchor.address_id) ?? null,
     addOns: [
       ...planContents(anchor),
-      ...itemSubs.filter((s) => s.address_id === anchor.address_id).map((s) => subscriptionLine(ctx, s)),
+      ...itemSubs.filter((s) => s.address_id === anchor.address_id).map((s) => subscriptionLine(ctx, s, nextDeliveryFor(s))),
     ],
     status: anchor.status,
   }));
@@ -458,7 +544,7 @@ export async function buildPlans(customerId: string): Promise<{ plans: PlanVM[];
       orderMinimum: WALDEN.orderMinimum,
       subscribeDiscountPct: discountPctFor(ctx, subs[0]),
       address: ctx.addressById.get(addressId) ?? null,
-      addOns: subs.map((s) => subscriptionLine(ctx, s)),
+      addOns: subs.map((s) => subscriptionLine(ctx, s, nextDeliveryFor(s))),
       status: "active",
     });
   }
@@ -504,6 +590,7 @@ export async function buildShopCatalog(bundleExternalProductId: string | null, b
         title: p.title,
         variantTitle: v.title !== "Default Title" ? v.title : null,
         price: money(v.price),
+        priceWindows: v.price_windows ?? [],
         imageUrl: p.image_url ?? null,
         badge: BADGE_TAGS.find((t) => (p.tags ?? []).some((tag) => tag.toLowerCase() === t.toLowerCase())) ?? null,
         available: true,

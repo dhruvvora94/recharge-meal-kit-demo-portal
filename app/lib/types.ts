@@ -173,6 +173,7 @@ export const BundleCollectionVariantSchema = z.object({
   sku: z.string().optional(),
   external_product_id: z.string(),
   price: z.string().optional(),
+  price_windows: z.array(z.object({ starts_on: z.string(), price: z.string() })).optional(),
   prices: z
     .object({
       unit_price: z.string(),

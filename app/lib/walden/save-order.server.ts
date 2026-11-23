@@ -18,11 +18,12 @@ import {
   getCharge,
   listOnetimes,
   updateBundleSelection,
-  updateOnetimeQuantity,
+  updateOnetime,
 } from "~/lib/recharge.server";
 import { getProductsByVariantIds } from "~/lib/shopify.server";
 import type { BundleItemPayload } from "~/lib/types";
 import { deliveryDateFromCharge, editDeadlineFromDelivery, isPastDeadline } from "./dates";
+import { basePriceOn, type PriceWindow } from "./pricing";
 import {
   bundleSubscriptionForCharge,
   contentsFor,
@@ -67,7 +68,11 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
 
   // R-06: the edit lock is enforced here too, from the same /merchant settings.
   const settings = dateSettingsFor(bundleSub);
-  const deadline = editDeadlineFromDelivery(deliveryDateFromCharge(charge.scheduled_at, settings), settings);
+  const deliveryIso = deliveryDateFromCharge(charge.scheduled_at, settings);
+  const deadline = editDeadlineFromDelivery(deliveryIso, settings);
+  // R-04: every price below is the variant's dated base price for THIS delivery.
+  const baseOn = (v: { price?: string | null; price_windows?: PriceWindow[] } | undefined) =>
+    basePriceOn(v?.price_windows, deliveryIso, Number(v?.price ?? 0));
   if (isPastDeadline(deadline)) throw new SaveOrderError("The edit window for this delivery has closed.");
 
   const desired = normalise(rawLines);
@@ -89,10 +94,10 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
     const { collectionIds } = await getBundleProductInfo(bundleProductId);
     const collections = await getBundleCollectionsFromShopify(collectionIds);
 
-    // Price every item explicitly from the BUNDLE's selling plan (Build Your
-    // Own: list − 10%). With custom prices on, Recharge otherwise prices an
-    // item from one of the item product's own selling plans, which can carry a
-    // different discount (Rack of Lamb also has a 25% plan → $74.98).
+    // Price every item explicitly: the dated base price for this delivery less
+    // the BUNDLE's plan discount (Build Your Own: 10%). With custom prices on,
+    // Recharge otherwise prices from the item product's own plans (Rack of Lamb
+    // also has a 25% plan → $74.98) and from today's Shopify price.
     const pct = discountPctFor(ctx, bundleSub);
     const sendPrices = bundleProduct?.custom_prices !== false;
     const items: BundleItemPayload[] = wantSubs.map((w) => {
@@ -100,7 +105,7 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
         .flatMap((col) => col.products.map((p) => ({ col, p })))
         .find(({ p }) => p.variants.some((v) => String(v.id) === w.variantId));
       if (!hit) throw new SaveOrderError("One of the subscription items isn't part of Build Your Own. Untick Subscribe to add it as a one-time pick.");
-      const list = Number(hit.p.variants.find((v) => String(v.id) === w.variantId)?.price ?? 0);
+      const list = baseOn(hit.p.variants.find((v) => String(v.id) === w.variantId));
       return {
         collection_id: hit.col.id,
         collection_source: "shopify",
@@ -150,8 +155,12 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
   for (const w of wantOnce) {
     const [keep, ...extras] = byVariant.get(w.variantId) ?? [];
     if (keep) {
-      if (keep.quantity !== w.quantity) {
-        await updateOnetimeQuantity(keep.id, w.quantity);
+      // Keep quantity and the dated one-time price in step with this delivery.
+      const keepProduct = ctx.products.get(w.variantId);
+      const datedPrice = keepProduct ? baseOn(keepProduct.variants.find((v) => String(v.id) === w.variantId)).toFixed(2) : null;
+      const priceStale = datedPrice != null && Number(keep.price ?? 0).toFixed(2) !== datedPrice;
+      if (keep.quantity !== w.quantity || priceStale) {
+        await updateOnetime(keep.id, { quantity: w.quantity, ...(priceStale ? { price: datedPrice! } : {}) });
         result.onetimesUpdated++;
       }
       for (const x of extras) {
@@ -163,7 +172,7 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
     const product = products.get(w.variantId);
     const variant = product?.variants.find((v: { id: number }) => String(v.id) === w.variantId);
     if (!product || !variant) throw new SaveOrderError("One of the one-time picks is no longer available.");
-    // One-time picks are charged at list price (no subscribe-and-save).
+    // One-time picks are charged at the dated base price (no subscribe-and-save).
     await createOnetime({
       address_id: charge.address_id,
       next_charge_scheduled_at: chargeDate,
@@ -172,7 +181,7 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
       external_product_id: { ecommerce: String(product.id) },
       external_variant_id: { ecommerce: w.variantId },
       quantity: w.quantity,
-      price: String(variant.price ?? "0"),
+      price: baseOn(variant).toFixed(2),
     });
     result.onetimesAdded++;
   }

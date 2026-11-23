@@ -59,13 +59,19 @@ export function ChangeDateModal({
             aria-label="Delivery date"
           >
             {order.deliveryOptions.map((o) => (
-              <option key={o.deliveryDate} value={o.deliveryDate}>
+              <option key={o.deliveryDate} value={o.deliveryDate} disabled={o.isCurrent && !o.valid}>
                 {formatWeekdayDate(o.deliveryDate)}
+                {o.isCurrent ? " (current)" : ""}
+                {Math.abs(o.estimatedTotal - order.estimatedTotal) > 0.004 ? ` — ${formatMoney(o.estimatedTotal, order.currency)}` : ""}
               </option>
             ))}
           </select>
           <p className="mt-2.5 text-[12px] text-ink/70">
-            Showing delivery days for {order.address?.zip ? `zip ${order.address.zip}` : "your zip"}.
+            {!order.zipHasCalendar
+              ? `We haven't planned delivery days for ${order.address?.zip ? `zip ${order.address.zip}` : "your zip"} yet.`
+              : order.deliveryOptions.some((o) => !o.isCurrent)
+                ? `Showing delivery days for ${order.address?.zip ? `zip ${order.address.zip}` : "your zip"}.`
+                : `No other delivery days left this month for zip ${order.address?.zip ?? ""}.`}
           </p>
           <button type="button" className="btn-carrot mt-4 px-4 py-2.5 text-[15px]" disabled={unchanged} onClick={() => setStep("confirm")}>
             Continue
@@ -90,7 +96,7 @@ export function ChangeDateModal({
               <dt className="text-ink/70">Estimated total</dt>
               <dd className="text-right">
                 <span className="block text-ink/50">was {formatMoney(order.estimatedTotal, order.currency)}</span>
-                <span className="font-semibold">{formatMoney(order.estimatedTotal, order.currency)}</span>
+                <span className="font-semibold">{formatMoney(option?.estimatedTotal ?? order.estimatedTotal, order.currency)}</span>
               </dd>
             </div>
           </dl>

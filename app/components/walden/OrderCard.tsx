@@ -18,6 +18,11 @@ function LineItem({ line, currency }: { line: LineVM; currency: string }) {
           {formatMoney(line.lineTotal, currency)} ({formatMoney(line.unitPrice, currency)}/ea)
         </span>
       </div>
+      {line.pendingUnitPrice != null && (
+        <p className="mt-[3px] text-[10.5px] font-semibold text-alert">
+          New price {formatMoney(line.pendingUnitPrice, currency)}/ea for this delivery date
+        </p>
+      )}
     </li>
   );
 }
@@ -130,6 +135,26 @@ export function OrderCard({ order, actions }: { order: UpcomingOrderVM; actions:
               </button>
             )}
           </div>
+
+          {!skipped && !order.locked && (!order.zipHasCalendar || !order.deliveryDateValid) && (
+            <div className="mt-5 border border-alert/40 bg-alert/10 px-5 py-3 text-[12.5px] font-medium leading-[1.6]">
+              {order.zipHasCalendar
+                ? "This date isn't a delivery day for your zip code. "
+                : "Delivery days for your zip code haven't been scheduled yet. "}
+              {order.zipHasCalendar && (
+                <button type="button" className="underline underline-offset-2" onClick={() => actions.onChangeDate(order)}>
+                  Choose a delivery date
+                </button>
+              )}
+            </div>
+          )}
+
+          {order.pricePending && (
+            <div className="mt-5 border border-gold bg-gold/15 px-5 py-3 text-[12.5px] font-medium leading-[1.6]">
+              Prices for some items in this delivery have changed. Your order will be charged at the new prices
+              shown — <Link to={editHref} className="underline underline-offset-2">review your order</Link>.
+            </div>
+          )}
 
           {order.belowMinimum && (
             <div className="mt-5 mb-1.5 bg-alert px-5 py-[18px] text-center text-[12.5px] font-semibold leading-[1.75] text-white">

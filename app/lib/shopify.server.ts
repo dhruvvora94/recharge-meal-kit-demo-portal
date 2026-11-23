@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parsePriceWindows } from "./walden/pricing";
 
 // ─── Shopify Storefront API client ──────────────────────────────────────────
 // Catalog reads (collections, products, variants, tags, images) go through the
@@ -58,6 +59,8 @@ const ShopifyVariantSchema = z.object({
   available: z.boolean().optional(),
   // e.g. { Plan: "Lower Carb", Portion: "Regular" }
   options: z.record(z.string()).optional(),
+  // Walden market pricing: dated base prices from the walden.price_windows metafield
+  price_windows: z.array(z.object({ starts_on: z.string(), price: z.string() })).optional(),
 });
 
 const ShopifyProductSchema = z.object({
@@ -92,6 +95,7 @@ const PRODUCT_FIELDS = /* GraphQL */ `
         price { amount }
         compareAtPrice { amount }
         selectedOptions { name value }
+        priceWindows: metafield(namespace: "walden", key: "price_windows") { value }
       }
     }
   }
@@ -114,6 +118,7 @@ type GqlProduct = {
       price: { amount: string };
       compareAtPrice: { amount: string } | null;
       selectedOptions: Array<{ name: string; value: string }>;
+      priceWindows: { value: string } | null;
     }>;
   };
 };
@@ -133,6 +138,7 @@ function mapProduct(p: GqlProduct): ShopifyProduct {
       sku: v.sku,
       price: v.price.amount,
       compare_at_price: v.compareAtPrice?.amount ?? null,
+      price_windows: parsePriceWindows(v.priceWindows?.value),
       available: v.availableForSale,
       options: Object.fromEntries(v.selectedOptions.map((o) => [o.name, o.value])),
     })),
@@ -339,4 +345,29 @@ export async function getSellingPlanDiscounts(productIds: string[]): Promise<Map
     }
   }
   return out;
+}
+
+// ─── Zip delivery calendar (R-02) ───────────────────────────────────────────
+// Metaobject `zip_based_delivery_dates`, one entry per ZIP with handle = ZIP.
+// Returns the sorted, de-duplicated dates, or null when the ZIP has no entry.
+
+export async function getZipDeliveryDates(zip: string): Promise<string[] | null> {
+  const clean = (zip ?? "").trim().slice(0, 5);
+  if (!/^\d{5}$/.test(clean)) return null;
+  const data: { metaobject: { dates: { value: string } | null } | null } = await storefrontQuery(
+    `query ZipDates($handle: String!) {
+      metaobject(handle: { type: "zip_based_delivery_dates", handle: $handle }) {
+        dates: field(key: "delivery_dates") { value }
+      }
+    }`,
+    { handle: clean }
+  );
+  if (!data.metaobject) return null;
+  let dates: unknown = [];
+  try {
+    dates = JSON.parse(data.metaobject.dates?.value ?? "[]");
+  } catch {
+    dates = [];
+  }
+  return [...new Set((Array.isArray(dates) ? dates : []).filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
 }

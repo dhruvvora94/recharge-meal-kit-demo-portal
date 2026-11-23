@@ -15,6 +15,8 @@ export type LineVM = {
   purchaseItemId: number | null;
   /** Shopify list price per unit, when it differs from what's charged (subscribe & save) */
   listUnitPrice: number | null;
+  /** Walden's dated price for this delivery when Recharge currently has a different one stored */
+  pendingUnitPrice: number | null;
   subscription: boolean;
 };
 
@@ -39,6 +41,12 @@ export type DeliveryOptionVM = {
   deliveryDate: string; // ISO
   chargeDate: string; // ISO
   editDeadline: string | null; // ISO, null when edits never lock
+  /** Estimated total if the order were delivered on this date (dated prices) */
+  estimatedTotal: number;
+  /** The order's current date (always listed so the picker can show it) */
+  isCurrent: boolean;
+  /** A planned delivery date for the member's ZIP */
+  valid: boolean;
 };
 
 export type UpcomingOrderVM = {
@@ -57,11 +65,23 @@ export type UpcomingOrderVM = {
   subscribeDiscountPct: number;
   /** List price minus charged price across subscription lines */
   savings: number;
+  /** Some lines are stored in Recharge at a different price than the dated price for this delivery */
+  pricePending: boolean;
+  /**
+   * Recharge hasn't stored this delivery's own contents and prices yet (a $0
+   * draft future charge with no charge-level bundle selection). It would fall
+   * back to the box defaults priced at checkout; saving locks them in.
+   */
+  needsPricing: boolean;
   oneTimePicks: LineVM[];
   subscriptions: LineVM[];
   address: AddressVM | null;
   /** Dates this member can move to (zip-constrained, R-02). */
   deliveryOptions: DeliveryOptionVM[];
+  /** Current delivery date is a planned date for the address ZIP */
+  deliveryDateValid: boolean;
+  /** The address ZIP has a delivery calendar at all */
+  zipHasCalendar: boolean;
 };
 
 export type PlanVM = {
@@ -82,6 +102,8 @@ export type ShopProductVM = {
   title: string;
   variantTitle: string | null;
   price: number;
+  /** walden.price_windows; the shop loader prices products for the order's delivery date */
+  priceWindows: { starts_on: string; price: string }[];
   imageUrl: string | null;
   badge: string | null;
   available: boolean;

@@ -4,6 +4,8 @@ import { Link, useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { useCallback, useEffect, useState } from "react";
 import { requireCustomerOwnsId } from "~/lib/auth.server";
 import { buildUpcomingOrders } from "~/lib/walden/portal.server";
+import { RescheduleError, rescheduleDelivery } from "~/lib/walden/reschedule.server";
+import { formatShortDate } from "~/lib/walden/dates";
 import type { UpcomingOrderVM } from "~/lib/walden/types";
 import { PageShell } from "~/components/walden/Layout";
 import { OrderCard } from "~/components/walden/OrderCard";
@@ -22,16 +24,39 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
 type Intent = "change_date" | "skip" | "unskip" | "update_address_once";
 
-// UX pass: every intent is accepted and echoed back so the full flow can be
-// clicked through. Each one gets its Recharge call in the wiring pass:
-//   change_date        → reschedule charge to chargeDateFromDelivery(date) (R-01..R-04)
-//   skip / unskip      → POST /charges/:id/skip|unskip
-//   update_address_once→ charge-level address override (one delivery only)
+//   change_date         → WIRED: reschedule the charge to delivery − /merchant offset,
+//                          only to dates planned for the address ZIP (R-01..R-03)
+//   skip / unskip       → preview only (POST /charges/:id/skip|unskip next)
+//   update_address_once → preview only (charge-level address override next)
+type ActionData =
+  | { ok: true; intent: Intent; wired: boolean; deliveryDate?: string }
+  | { ok: false; intent: Intent; error: string };
+
 export async function action({ params, request }: ActionFunctionArgs) {
-  await requireCustomerOwnsId(request, params.customerId!);
+  const customerId = params.customerId!;
+  await requireCustomerOwnsId(request, customerId);
   const form = await request.formData();
   const intent = String(form.get("intent")) as Intent;
-  return json({ ok: true, intent, wired: false });
+
+  if (intent === "change_date") {
+    try {
+      const { deliveryDate } = await rescheduleDelivery(
+        customerId,
+        String(form.get("chargeId") ?? ""),
+        String(form.get("deliveryDate") ?? "")
+      );
+      return json<ActionData>({ ok: true, intent, wired: true, deliveryDate });
+    } catch (err) {
+      if (!(err instanceof RescheduleError)) console.error("[change_date]", err);
+      const error =
+        err instanceof RescheduleError
+          ? err.message
+          : `Recharge didn't accept the new date: ${err instanceof Error ? err.message.replace(/^Recharge \d+ — [^:]+: /, "").slice(0, 200) : "unknown error"}`;
+      return json<ActionData>({ ok: false, intent, error }, { status: 422 });
+    }
+  }
+
+  return json<ActionData>({ ok: true, intent, wired: false });
 }
 
 export default function UpcomingOrders() {
@@ -48,7 +73,16 @@ export default function UpcomingOrders() {
     fetcher.submit({ intent, ...fields }, { method: "post" });
 
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok && !fetcher.data.wired) {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (!fetcher.data.ok) {
+      setToast({ message: fetcher.data.error, tone: "error" });
+      return;
+    }
+    if (fetcher.data.wired && fetcher.data.deliveryDate) {
+      setToast({ message: `Delivery moved to ${formatShortDate(fetcher.data.deliveryDate)}.` });
+      return;
+    }
+    if (!fetcher.data.wired) {
       const labels: Record<string, string> = {
         change_date: "Delivery date change",
         skip: "Skip",

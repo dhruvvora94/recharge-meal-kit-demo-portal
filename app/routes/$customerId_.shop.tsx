@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { requireCustomerOwnsId } from "~/lib/auth.server";
 import { buildShopCatalog, buildUpcomingOrders, findBundleSubscription } from "~/lib/walden/portal.server";
 import { SaveOrderError, saveDeliveryEdits, type DesiredLine } from "~/lib/walden/save-order.server";
-import { formatDeliveryChip } from "~/lib/walden/dates";
+import { formatDeliveryChip, formatLongDate } from "~/lib/walden/dates";
+import { basePriceOn, windowOn } from "~/lib/walden/pricing";
 import type { ShopProductVM, UpcomingOrderVM } from "~/lib/walden/types";
 import { PageShell } from "~/components/walden/Layout";
 import { Toast, formatMoney, type ToastState } from "~/components/walden/ui";
@@ -29,7 +30,14 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     bundleSub?.external_product_id?.ecommerce ?? null,
     bundleSub?.external_variant_id?.ecommerce ?? null
   );
-  return json({ customerId, order, editableOrders: editable, ...catalog });
+  // R-04: price the catalogue for the selected delivery's date.
+  const deliveryIso = order?.deliveryDate ?? new Date().toISOString().slice(0, 10);
+  const products = catalog.products.map((p) => ({
+    ...p,
+    price: basePriceOn(p.priceWindows, deliveryIso, p.price),
+    priceFrom: windowOn(p.priceWindows, deliveryIso)?.starts_on ?? null,
+  }));
+  return json({ customerId, order, editableOrders: editable, collections: catalog.collections, products });
 }
 
 // Save Changes → this delivery only (R-07). See save-order.server.ts.
@@ -282,7 +290,10 @@ export default function Shop() {
   const pct = order?.subscribeDiscountPct ?? 0;
   const subtotal = round2(cart.reduce((s, l) => s + unitPriceOf(l, pct) * l.quantity, 0));
   const savings = round2(cart.reduce((s, l) => s + (l.listPrice - unitPriceOf(l, pct)) * l.quantity, 0));
-  const dirty = cartKey(cart) !== cartKey(initialCart(order));
+  // A draft delivery (or one with outdated prices) can be saved unchanged to
+  // lock its contents in Recharge at this delivery's dated prices.
+  const needsPricing = !!order && (order.needsPricing || order.pricePending);
+  const dirty = cartKey(cart) !== cartKey(initialCart(order)) || (needsPricing && cart.length > 0);
   const saving = fetcher.state !== "idle";
   const minimum = order?.orderMinimum ?? 0;
   const metMinimum = subtotal >= minimum;
@@ -328,7 +339,14 @@ export default function Shop() {
             </p>
             <h1 className="mt-5 font-serif text-[64px] font-medium leading-none tracking-[-0.01em] text-forest">{activeTitle}</h1>
             <div className="mt-10 flex items-center justify-between text-[13px]">
-              <span className="font-medium">{visible.length} Products</span>
+              <span className="font-medium">
+                {visible.length} Products
+                {order && (
+                  <span className="ml-3 font-normal text-ink/60">
+                    Prices for your {formatLongDate(order.deliveryDate)} delivery
+                  </span>
+                )}
+              </span>
               <label className="flex items-center gap-2.5 text-[15px] font-medium text-forest">
                 Sort By
                 <select
@@ -458,7 +476,13 @@ export default function Shop() {
                         )
                       }
                     >
-                      {saving ? "Saving…" : dirty ? "Save Changes" : "No changes to save"}
+                      {saving
+                        ? "Saving…"
+                        : cartKey(cart) !== cartKey(initialCart(order))
+                          ? "Save Changes"
+                          : dirty
+                            ? "Confirm Order & Prices"
+                            : "No changes to save"}
                     </button>
                     <p className="mt-2 text-center text-[11px] text-ink/60">
                       Changes apply to your {formatDeliveryChip(order.deliveryDate)} delivery only.

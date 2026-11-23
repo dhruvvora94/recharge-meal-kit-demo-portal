@@ -211,6 +211,17 @@ export async function skipCharge(chargeId: string, purchaseItemIds?: number[]): 
   return ChargeSchema.parse(data.charge);
 }
 
+// Moves one queued charge (and its items) to a new date. Same endpoint the
+// Storefront SDK's rescheduleCharge uses; with multiple queued charges enabled
+// it moves just this charge.
+export async function rescheduleCharge(chargeId: string | number, nextChargeDate: string): Promise<Charge> {
+  const data = await api<{ charge: unknown }>(`/charges/${chargeId}/change_next_charge_date`, {
+    method: "POST",
+    body: JSON.stringify({ next_charge_date: nextChargeDate }),
+  });
+  return ChargeSchema.parse(data.charge);
+}
+
 export async function unskipCharge(chargeId: string, purchaseItemIds?: number[]): Promise<Charge> {
   const body = purchaseItemIds?.length ? { purchase_item_ids: purchaseItemIds } : {};
   const data = await api<{ charge: unknown }>(`/charges/${chargeId}/unskip`, {
@@ -316,6 +327,7 @@ export async function getBundleCollectionsFromShopify(
             sku: v.sku ?? undefined,
             external_product_id: String(p.id),
             price: v.price ?? undefined,
+            price_windows: v.price_windows,
           })),
         })),
       };
@@ -449,8 +461,8 @@ export async function listOnetimes(customerId: string): Promise<Onetime[]> {
   return z.array(OnetimeSchema).parse(data.onetimes);
 }
 
-export async function updateOnetimeQuantity(onetimeId: number, quantity: number): Promise<void> {
-  await api(`/onetimes/${onetimeId}`, { method: "PUT", body: JSON.stringify({ quantity }) });
+export async function updateOnetime(onetimeId: number, fields: { quantity?: number; price?: string }): Promise<void> {
+  await api(`/onetimes/${onetimeId}`, { method: "PUT", body: JSON.stringify(fields) });
 }
 
 // ─── Addresses ────────────────────────────────────────────────────────────────

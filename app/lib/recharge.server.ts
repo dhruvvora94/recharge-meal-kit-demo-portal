@@ -66,7 +66,9 @@ export async function rechargeFetch<T>(
       throw new Error(`Recharge ${res.status} — ${path}: ${text}`);
     }
 
-    return res.json() as Promise<T>;
+    // DELETEs (and some other calls) return 204 / an empty body.
+    const body = await res.text();
+    return (body ? JSON.parse(body) : undefined) as T;
   }
 
   throw new Error(`Recharge — ${path}: exhausted retries`);

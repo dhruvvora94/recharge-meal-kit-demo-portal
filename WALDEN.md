@@ -21,4 +21,4 @@ All screens render live Recharge + Shopify data. Actions (change date, skip/unsk
 - Brand: `tailwind.config.ts` (forest / cream / carrot / gold), `public/walden-logo.svg`
 
 ## Run
-`npm install && npm run dev` → http://localhost:5173. Fill `.env` first; sign in with `DEMO_BYPASS_EMAIL` to open `DEMO_CUSTOMER_ID` without an email code.
+`npm install && npm run dev` → http://localhost:5173. Fill `.env` first (Shopify catalog reads use a Headless channel Storefront token — see SHOPIFY_STOREFRONT_PRIVATE_TOKEN); sign in with `DEMO_BYPASS_EMAIL` to open `DEMO_CUSTOMER_ID` without an email code.

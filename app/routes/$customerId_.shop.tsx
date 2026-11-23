@@ -459,6 +459,18 @@ export default function Shop() {
                       <span>Estimated subtotal</span>
                       <span>{formatMoney(subtotal)}</span>
                     </div>
+                    {order.creditAvailable > 0 && (
+                      <>
+                        <div className="mt-1.5 flex items-center justify-between text-[13px] text-forest-700">
+                          <span>Credit applied</span>
+                          <span>−{formatMoney(Math.min(order.creditAvailable, subtotal))}</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-[15px] font-bold">
+                          <span>Estimated due</span>
+                          <span>{formatMoney(Math.max(0, subtotal - order.creditAvailable))}</span>
+                        </div>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="btn-forest-lg mt-3 w-full rounded-full"

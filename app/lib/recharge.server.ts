@@ -131,6 +131,34 @@ export async function getCreditSummary(customerId: string): Promise<CreditSummar
   return CreditSummarySchema.parse(data.credit_summary);
 }
 
+// ─── Credit accounts (R-13) ──────────────────────────────────────────────────
+
+const CreditAccountRowSchema = z.object({
+  id: z.number(),
+  name: z.string().nullable().optional(),
+  type: z.string().nullable().optional(),
+  available_balance: z.string(),
+  initial_value: z.string().nullable().optional(),
+  currency_code: z.string().nullable().optional(),
+  expires_at: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
+});
+export type CreditAccountRow = z.infer<typeof CreditAccountRowSchema>;
+
+export async function listCreditAccounts(customerId: string): Promise<CreditAccountRow[]> {
+  const data = await api<{ credit_accounts: unknown[] }>(`/credit_accounts?customer_id=${customerId}&limit=50`);
+  return z.array(CreditAccountRowSchema).parse(data.credit_accounts);
+}
+
+/** Turn automatic credit redemption on recurring charges on or off for a customer. */
+export async function setApplyCreditToRecurring(customerId: string, apply: boolean): Promise<Customer> {
+  const data = await api<{ customer: unknown }>(`/customers/${customerId}`, {
+    method: "PUT",
+    body: JSON.stringify({ apply_credit_to_next_recurring_charge: apply }),
+  });
+  return CustomerSchema.parse(data.customer);
+}
+
 // ─── Subscriptions ────────────────────────────────────────────────────────────
 
 export async function getSubscription(subscriptionId: number): Promise<Subscription> {

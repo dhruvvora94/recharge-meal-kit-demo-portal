@@ -67,6 +67,12 @@ export type UpcomingOrderVM = {
   savings: number;
   /** Some lines are stored in Recharge at a different price than the dated price for this delivery */
   pricePending: boolean;
+  /** Credit expected to be used on this order (orders draw down the balance in date order) */
+  creditApplied: number;
+  /** Estimated total less credit */
+  amountDue: number;
+  /** Credit still unused when this order charges (what an edited order could draw on) */
+  creditAvailable: number;
   /**
    * Recharge hasn't stored this delivery's own contents and prices yet (a $0
    * draft future charge with no charge-level bundle selection). It would fall
@@ -82,6 +88,14 @@ export type UpcomingOrderVM = {
   deliveryDateValid: boolean;
   /** The address ZIP has a delivery calendar at all */
   zipHasCalendar: boolean;
+};
+
+export type CreditVM = {
+  balance: number;
+  currency: string;
+  /** Recharge applies credit to recurring charges automatically */
+  autoApply: boolean;
+  accounts: { id: number; name: string; balance: number; expiresAt: string | null }[];
 };
 
 export type PlanVM = {

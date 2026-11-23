@@ -11,6 +11,8 @@ export const CustomerSchema = z.object({
   has_payment_method_in_dunning: z.boolean(),
   subscriptions_active_count: z.number(),
   subscriptions_total_count: z.number(),
+  // Recharge applies available credit to recurring charges when true (R-13).
+  apply_credit_to_next_recurring_charge: z.boolean().nullable().optional(),
   // Links the Recharge customer to its underlying Shopify customer; `ecommerce`
   // is the Shopify customer id used to read/write dietary preference tags.
   external_customer_id: z

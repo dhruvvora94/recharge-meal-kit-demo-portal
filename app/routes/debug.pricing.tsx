@@ -31,6 +31,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
       )
     ),
     discounts_on_charge: charge.discounts,
+    customer: await safe(rechargeFetch<any>(`/customers/${auth.customerId}`).then((r) => r.customer)),
+    credit_summary: await safe(rechargeFetch<any>(`/customers/${auth.customerId}/credit_summary?include[]=credit_details`)),
+    credit_accounts: await safe(rechargeFetch<any>(`/credit_accounts?customer_id=${auth.customerId}&limit=50`)),
+    all_charges: await safe(
+      rechargeFetch<any>(`/charges?customer_id=${auth.customerId}&status=queued,skipped,error&sort_by=scheduled_at-asc&limit=50`).then((r) =>
+        r.charges.map((c: any) => ({
+          id: c.id,
+          status: c.status,
+          scheduled_at: c.scheduled_at,
+          total_price: c.total_price,
+          items: c.line_items.map((l: any) => `${l.title} x${l.quantity} @${l.unit_price} (${l.purchase_item_type} ${l.purchase_item_id})`),
+        }))
+      )
+    ),
     onetimes: await safe(rechargeFetch<any>(`/onetimes?customer_id=${auth.customerId}&limit=250`)),
     shopify_variants: Object.fromEntries(
       [...(await getProductsByVariantIds(variantIds))].map(([v, p]) => [v, { product: p.title, product_id: p.id, variants: p.variants }])

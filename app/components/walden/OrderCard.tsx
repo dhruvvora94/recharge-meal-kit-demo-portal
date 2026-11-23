@@ -95,6 +95,18 @@ export function OrderCard({ order, actions }: { order: UpcomingOrderVM; actions:
                 You save {formatMoney(order.savings, order.currency)} with Subscribe &amp; Save
               </p>
             )}
+            {order.creditApplied > 0 && (
+              <div className="mt-3 border-t border-line pt-2.5 text-[12px]">
+                <p className="flex justify-between gap-4">
+                  <span>Credit applied</span>
+                  <span className="font-semibold text-forest-700">−{formatMoney(order.creditApplied, order.currency)}</span>
+                </p>
+                <p className="mt-1 flex justify-between gap-4 font-bold">
+                  <span>Due</span>
+                  <span>{formatMoney(order.amountDue, order.currency)}</span>
+                </p>
+              </div>
+            )}
           </div>
           <p className="mt-auto pt-20 text-[9.5px] font-medium">*Includes cost of plan and all specials</p>
         </div>

@@ -4,7 +4,10 @@ import { Link, useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import { useCallback, useEffect, useState } from "react";
 import { requireCustomerOwnsId } from "~/lib/auth.server";
 import { buildUpcomingOrders } from "~/lib/walden/portal.server";
+import { setApplyCreditToRecurring } from "~/lib/recharge.server";
+import { CreditPanel } from "~/components/walden/CreditPanel";
 import { RescheduleError, rescheduleDelivery } from "~/lib/walden/reschedule.server";
+import { SkipError, skipDelivery, unskipDelivery } from "~/lib/walden/skip.server";
 import { formatShortDate } from "~/lib/walden/dates";
 import type { UpcomingOrderVM } from "~/lib/walden/types";
 import { PageShell } from "~/components/walden/Layout";
@@ -18,15 +21,15 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   const customerId = params.customerId!;
   if (!/^\d+$/.test(customerId)) throw new Response("Not Found", { status: 404 });
   await requireCustomerOwnsId(request, customerId);
-  const { orders, addresses } = await buildUpcomingOrders(customerId);
-  return json({ customerId, orders, addresses });
+  const { orders, addresses, credit } = await buildUpcomingOrders(customerId);
+  return json({ customerId, orders, addresses, credit });
 }
 
-type Intent = "change_date" | "skip" | "unskip" | "update_address_once";
+type Intent = "change_date" | "skip" | "unskip" | "update_address_once" | "credit_auto";
 
 //   change_date         → WIRED: reschedule the charge to delivery − /merchant offset,
 //                          only to dates planned for the address ZIP (R-01..R-03)
-//   skip / unskip       → preview only (POST /charges/:id/skip|unskip next)
+//   skip / unskip       → WIRED: skip/unskip every item on that one delivery
 //   update_address_once → preview only (charge-level address override next)
 type ActionData =
   | { ok: true; intent: Intent; wired: boolean; deliveryDate?: string }
@@ -56,11 +59,40 @@ export async function action({ params, request }: ActionFunctionArgs) {
     }
   }
 
+  if (intent === "credit_auto") {
+    try {
+      const apply = String(form.get("apply")) === "true";
+      await setApplyCreditToRecurring(customerId, apply);
+      return json<ActionData>({ ok: true, intent, wired: true });
+    } catch (err) {
+      console.error("[credit_auto]", err);
+      return json<ActionData>({ ok: false, intent, error: "Couldn't update your credit setting." }, { status: 422 });
+    }
+  }
+
+  if (intent === "skip" || intent === "unskip") {
+    const chargeId = String(form.get("chargeId") ?? "");
+    try {
+      const { deliveryDate } =
+        intent === "skip"
+          ? await skipDelivery(customerId, chargeId, String(form.get("reason") ?? ""))
+          : await unskipDelivery(customerId, chargeId);
+      return json<ActionData>({ ok: true, intent, wired: true, deliveryDate });
+    } catch (err) {
+      if (!(err instanceof SkipError)) console.error(`[${intent}]`, err);
+      const error =
+        err instanceof SkipError
+          ? err.message
+          : `Recharge didn't accept the ${intent}: ${err instanceof Error ? err.message.replace(/^Recharge \d+ — [^:]+: /, "").slice(0, 200) : "unknown error"}`;
+      return json<ActionData>({ ok: false, intent, error }, { status: 422 });
+    }
+  }
+
   return json<ActionData>({ ok: true, intent, wired: false });
 }
 
 export default function UpcomingOrders() {
-  const { customerId, orders, addresses } = useLoaderData<typeof loader>();
+  const { customerId, orders, addresses, credit } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
   const [dateOrder, setDateOrder] = useState<UpcomingOrderVM | null>(null);
@@ -78,8 +110,18 @@ export default function UpcomingOrders() {
       setToast({ message: fetcher.data.error, tone: "error" });
       return;
     }
+    if (fetcher.data.wired && fetcher.data.intent === "credit_auto") {
+      setToast({ message: "Credit setting updated." });
+      return;
+    }
     if (fetcher.data.wired && fetcher.data.deliveryDate) {
-      setToast({ message: `Delivery moved to ${formatShortDate(fetcher.data.deliveryDate)}.` });
+      const when = formatShortDate(fetcher.data.deliveryDate);
+      const messages: Record<string, string> = {
+        change_date: `Delivery moved to ${when}.`,
+        skip: `Your ${when} delivery is skipped.`,
+        unskip: `Your ${when} delivery is back on.`,
+      };
+      setToast({ message: messages[fetcher.data.intent] ?? "Saved." });
       return;
     }
     if (!fetcher.data.wired) {
@@ -100,6 +142,12 @@ export default function UpcomingOrders() {
           <h1 className="text-[42px] font-[900] uppercase leading-none tracking-[-0.03em]">Upcoming Orders</h1>
           <Link to={`/${customerId}/orders`} className="link-forest text-[13px]">View Order History</Link>
         </div>
+
+        <CreditPanel
+          credit={credit}
+          busy={fetcher.state !== "idle"}
+          onToggle={(apply) => submit("credit_auto", { apply: String(apply) })}
+        />
 
         {orders.length === 0 ? (
           <div className="border border-line bg-cream px-8 py-14 text-center">

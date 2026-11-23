@@ -11,7 +11,9 @@
 import {
   getBundleCollectionsFromShopify,
   getBundleProductInfo,
+  getCustomer,
   listActiveCharges,
+  listCreditAccounts,
   listAddresses,
   listBundleProducts,
   listBundleSelectionsByPurchaseItemIds,
@@ -41,6 +43,7 @@ import {
 import { basePriceOn, subscribePrice as subscribePriceOf, type PriceWindow } from "./pricing";
 import type {
   AddressVM,
+  CreditVM,
   DeliveryOptionVM,
   LineVM,
   PlanVM,
@@ -401,11 +404,47 @@ function totalOn(ctx: PortalContext, lines: LineVM[], deliveryIso: string, pct: 
 
 // ─── Upcoming orders ──────────────────────────────────────────────────────────
 
+// ─── Credits (R-13) ───────────────────────────────────────────────────────────
+
+export async function loadCredit(customerId: string): Promise<CreditVM> {
+  const [customer, accounts] = await Promise.all([
+    getCustomer(customerId),
+    listCreditAccounts(customerId).catch(() => []),
+  ]);
+  const today = toIsoDate(new Date());
+  const live = accounts.filter((a) => money(a.available_balance) > 0 && (!a.expires_at || a.expires_at.slice(0, 10) >= today));
+  return {
+    balance: money(live.reduce((s, a) => s + money(a.available_balance), 0)),
+    currency: live[0]?.currency_code ?? "USD",
+    autoApply: !!customer.apply_credit_to_next_recurring_charge,
+    accounts: live.map((a) => ({
+      id: a.id,
+      name: a.name || "Store credit",
+      balance: money(a.available_balance),
+      expiresAt: a.expires_at ?? null,
+    })),
+  };
+}
+
+/** Draw the balance down across queued orders in date order (no per-order cap). */
+function applyCredit(orders: UpcomingOrderVM[], credit: CreditVM): UpcomingOrderVM[] {
+  let remaining = credit.autoApply ? credit.balance : 0;
+  return [...orders]
+    .sort((a, b) => a.chargeDate.localeCompare(b.chargeDate))
+    .map((o) => {
+      const available = o.status === "queued" ? remaining : 0;
+      const applied = money(Math.min(available, o.estimatedTotal));
+      remaining = money(remaining - applied);
+      return { ...o, creditAvailable: available, creditApplied: applied, amountDue: money(o.estimatedTotal - applied) };
+    });
+}
+
 export async function buildUpcomingOrders(customerId: string): Promise<{
   orders: UpcomingOrderVM[];
   addresses: AddressVM[];
+  credit: CreditVM;
 }> {
-  const ctx = await loadPortalContext(customerId);
+  const [ctx, credit] = await Promise.all([loadPortalContext(customerId), loadCredit(customerId)]);
   const today = toIsoDate(new Date());
   const upcoming = ctx.charges.filter((c) => c.scheduled_at.slice(0, 10) >= today);
 
@@ -468,6 +507,9 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
       subscribeDiscountPct: pct,
       savings: savingsOf(subscriptionLines),
       pricePending: allLines.some((l) => l.pendingUnitPrice != null),
+      creditApplied: 0,
+      amountDue: estimatedTotal,
+      creditAvailable: 0,
       needsPricing:
         charge.status === "queued" &&
         charge.line_items.length === 0 &&
@@ -485,7 +527,7 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
     };
   });
 
-  return { orders, addresses: [...ctx.addressById.values()] };
+  return { orders: applyCredit(orders, credit), addresses: [...ctx.addressById.values()], credit };
 }
 
 // ─── Plans ────────────────────────────────────────────────────────────────────

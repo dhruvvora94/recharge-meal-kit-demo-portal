@@ -47,6 +47,11 @@ function PlanCard({ plan, customerId, onEditNickname }: { plan: PlanVM; customer
         <div className="px-1 pt-[18px] pb-8">
           <h3 className="text-[19px] font-bold">Plan</h3>
           <p className="mt-5 text-[15px]">Order Minimum: {formatMoney(plan.orderMinimum)}</p>
+          {plan.subscribeDiscountPct > 0 && (
+            <p className="mt-2 text-[15px]">
+              Subscribe &amp; Save: <span className="font-semibold text-forest-700">{plan.subscribeDiscountPct}% off</span> every subscription item
+            </p>
+          )}
         </div>
         <div className="pr-6 pt-[18px] pb-8">
           <h3 className="text-[19px] font-bold">Add Ons</h3>
@@ -56,7 +61,9 @@ function PlanCard({ plan, customerId, onEditNickname }: { plan: PlanVM; customer
             <ul className="mt-5 space-y-0 text-[15px] leading-[1.45]">
               {plan.addOns.map((l) => (
                 <li key={l.key}>
-                  {l.title} - {l.quantityLabel} ({formatMoney(l.unitPrice)}/ea)
+                  {l.title} - {l.quantityLabel} (
+                  {l.listUnitPrice != null && <span className="mr-1 text-ink/45 line-through">{formatMoney(l.listUnitPrice)}</span>}
+                  {formatMoney(l.unitPrice)}/ea)
                 </li>
               ))}
             </ul>

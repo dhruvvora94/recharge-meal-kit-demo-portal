@@ -8,8 +8,13 @@ function LineItem({ line, currency }: { line: LineVM; currency: string }) {
     <li className="mb-[11px]">
       <p className="text-[13px] font-medium leading-snug">{line.title}</p>
       <div className="mt-[3px] flex items-baseline justify-between gap-3 text-[11px]">
-        <span>{line.quantityLabel}</span>
+        <span className="whitespace-nowrap">{line.quantityLabel}</span>
         <span className="whitespace-nowrap font-bold">
+          {line.listUnitPrice != null && (
+            <span className="mr-1 font-medium text-ink/45 line-through">
+              {formatMoney(line.listUnitPrice * line.quantity, currency)}
+            </span>
+          )}
           {formatMoney(line.lineTotal, currency)} ({formatMoney(line.unitPrice, currency)}/ea)
         </span>
       </div>
@@ -17,10 +22,15 @@ function LineItem({ line, currency }: { line: LineVM; currency: string }) {
   );
 }
 
-function Column({ title, children }: { title: string; children: React.ReactNode }) {
+function Column({ title, badge, children }: { title: string; badge?: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <h3 className="mb-[9px] text-[15px] font-bold">{title}</h3>
+      <h3 className="mb-[9px] flex items-center gap-2 text-[15px] font-bold">
+        {title}
+        {badge && (
+          <span className="rounded-full bg-gold/40 px-2 py-[1px] text-[10px] font-bold uppercase tracking-wide text-forest">{badge}</span>
+        )}
+      </h3>
       {children}
     </div>
   );
@@ -75,6 +85,11 @@ export function OrderCard({ order, actions }: { order: UpcomingOrderVM; actions:
           <div className="mt-auto pt-16">
             <p className="eyebrow text-[10px]">Estimated Total*</p>
             <p className="mt-1 text-[17px] font-semibold">{formatMoney(order.estimatedTotal, order.currency)}</p>
+            {order.savings > 0 && (
+              <p className="mt-1 text-[11px] font-semibold text-forest-700">
+                You save {formatMoney(order.savings, order.currency)} with Subscribe &amp; Save
+              </p>
+            )}
           </div>
           <p className="mt-auto pt-20 text-[9.5px] font-medium">*Includes cost of plan and all specials</p>
         </div>
@@ -96,7 +111,7 @@ export function OrderCard({ order, actions }: { order: UpcomingOrderVM; actions:
               {!readOnly && <Link to={editHref} className="link-forest text-[13px]">Edit</Link>}
             </Column>
 
-            <Column title="Subscriptions">
+            <Column title="Subscriptions" badge={order.subscribeDiscountPct > 0 ? `Save ${order.subscribeDiscountPct}%` : undefined}>
               {order.subscriptions.length === 0 ? (
                 <p className="mb-[3px] text-[13px] font-medium">None</p>
               ) : (

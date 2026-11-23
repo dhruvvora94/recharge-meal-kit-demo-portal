@@ -131,6 +131,9 @@ export const BundleSelectionItemSchema = z.object({
   external_product_id: z.string(),
   external_variant_id: z.string(),
   quantity: z.number(),
+  // Per-item price Recharge charges inside the bundle. Set when the bundle has
+  // custom prices enabled; if omitted on create, Recharge picks a price itself.
+  price: z.string().nullable().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
 });
@@ -156,6 +159,7 @@ export type DefaultBundleItem = {
   collection_id: string | null;
   external_variant_id: string;
   quantity: number;
+  price?: string | null;
 };
 
 // [quantity_min, quantity_max]; a null max means there is no upper limit.
@@ -220,6 +224,7 @@ export const BundleProductSchema = z.object({
   title: z.string(),
   is_customizable: z.boolean(),
   price_rule: z.string(),
+  custom_prices: z.boolean().nullable().optional(),
   variants: z.array(BundleProductVariantSchema),
 });
 
@@ -324,6 +329,8 @@ export const PlanSchema = z.object({
   order_interval_frequency: z.number().nullable().optional(),
   charge_interval_frequency: z.number().nullable().optional(),
   max_queued_charges: z.number().nullable().optional(),
+  discount_amount: z.union([z.string(), z.number()]).nullable().optional(),
+  discount_type: z.string().nullable().optional(),
   charge_creation_day_of_week: z.number().int().min(0).max(6).nullable().optional(),
   charge_creation_day_of_month: z.number().int().min(1).max(31).nullable().optional(),
 });
@@ -336,4 +343,4 @@ export type Plan = z.infer<typeof PlanSchema>;
 export type BundleItemPayload = Pick<
   BundleSelectionItem,
   "collection_source" | "external_product_id" | "external_variant_id" | "quantity"
-> & { collection_id: string | null };
+> & { collection_id: string | null; price?: string };

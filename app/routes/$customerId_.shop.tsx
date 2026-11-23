@@ -4,6 +4,7 @@ import { Link, useFetcher, useLoaderData } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { requireCustomerOwnsId } from "~/lib/auth.server";
 import { buildShopCatalog, buildUpcomingOrders, findBundleSubscription } from "~/lib/walden/portal.server";
+import { SaveOrderError, saveDeliveryEdits, type DesiredLine } from "~/lib/walden/save-order.server";
 import { formatDeliveryChip } from "~/lib/walden/dates";
 import type { ShopProductVM, UpcomingOrderVM } from "~/lib/walden/types";
 import { PageShell } from "~/components/walden/Layout";
@@ -31,12 +32,30 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   return json({ customerId, order, editableOrders: editable, ...catalog });
 }
 
-// UX pass: echo only. Wiring (R-07): subscription lines → bundle_selection /
-// subscription qty on this charge; one-time picks → POST /onetimes on this
-// charge's date; "apply to all future" toggles subscription vs charge scope.
+// Save Changes → this delivery only (R-07). See save-order.server.ts.
 export async function action({ params, request }: ActionFunctionArgs) {
-  await requireCustomerOwnsId(request, params.customerId!);
-  return json({ ok: true, wired: false });
+  const customerId = params.customerId!;
+  await requireCustomerOwnsId(request, customerId);
+  const form = await request.formData();
+  const chargeId = String(form.get("chargeId") ?? "");
+  let lines: DesiredLine[] = [];
+  try {
+    lines = JSON.parse(String(form.get("lines") ?? "[]"));
+  } catch {
+    return json({ ok: false as const, error: "Couldn't read your order changes." }, { status: 400 });
+  }
+  if (!/^\d+$/.test(chargeId)) return json({ ok: false as const, error: "Missing delivery." }, { status: 400 });
+  try {
+    const result = await saveDeliveryEdits(customerId, chargeId, lines);
+    return json({ ok: true as const, result });
+  } catch (err) {
+    const message =
+      err instanceof SaveOrderError
+        ? err.message
+        : `Recharge didn't accept the change: ${err instanceof Error ? err.message.replace(/^Recharge \d+ — [^:]+: /, "").slice(0, 200) : "unknown error"}`;
+    if (!(err instanceof SaveOrderError)) console.error("[save_order]", err);
+    return json({ ok: false as const, error: message }, { status: 422 });
+  }
 }
 
 // ─── Cart state ───────────────────────────────────────────────────────────────
@@ -45,11 +64,16 @@ type CartLine = {
   variantId: string;
   title: string;
   imageUrl: string | null;
-  unitPrice: number;
+  /** Shopify list price; subscription lines get the selling plan discount off this */
+  listPrice: number;
   quantity: number;
   subscription: boolean;
   variantTitle: string | null;
 };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const subscribeUnit = (list: number, pct: number) => round2(list * (1 - pct / 100));
+const unitPriceOf = (l: CartLine, pct: number) => (l.subscription ? subscribeUnit(l.listPrice, pct) : l.listPrice);
 
 function initialCart(order: UpcomingOrderVM | null): CartLine[] {
   if (!order) return [];
@@ -57,13 +81,20 @@ function initialCart(order: UpcomingOrderVM | null): CartLine[] {
     variantId: l.externalVariantId ?? l.key,
     title: l.title,
     imageUrl: l.imageUrl,
-    unitPrice: l.unitPrice,
+    listPrice: l.listUnitPrice ?? l.unitPrice,
     quantity: l.quantity,
     subscription,
     variantTitle: null,
   });
   return [...order.subscriptions.map(toLine(true)), ...order.oneTimePicks.map(toLine(false))];
 }
+
+const cartKey = (lines: CartLine[]) =>
+  JSON.stringify(
+    lines
+      .map((l) => [l.variantId, l.quantity, l.subscription])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  );
 
 // ─── Small pieces ─────────────────────────────────────────────────────────────
 
@@ -114,12 +145,17 @@ function ProductImage({ src, alt }: { src: string | null; alt: string }) {
 function ProductCard({
   product,
   line,
+  subscribe,
+  discountPct,
   onAdd,
   onQty,
   onToggleSubscribe,
 }: {
   product: ShopProductVM;
   line: CartLine | undefined;
+  /** Subscribe checkbox state: the cart line's, or the pending choice before Add. */
+  subscribe: boolean;
+  discountPct: number;
   onAdd: () => void;
   onQty: (q: number) => void;
   onToggleSubscribe: () => void;
@@ -139,15 +175,24 @@ function ProductCard({
         )}
       </div>
       <h3 className="mt-3 truncate text-[19px] font-medium text-forest">{product.title}</h3>
-      {line && (
-        <label className="mt-2 flex cursor-pointer items-center gap-2.5 rounded border border-[#C9D4BE] bg-[#E3E9D9] px-2.5 py-2 text-[13px] font-medium">
-          <input type="checkbox" className="h-4 w-4 accent-forest-700" checked={line.subscription} onChange={onToggleSubscribe} />
-          Subscribe
+      {product.available && (
+        <label
+          className={`mt-2 flex cursor-pointer items-center gap-2.5 rounded border px-2.5 py-2 text-[13px] font-medium transition-colors ${
+            subscribe ? "border-[#C9D4BE] bg-[#E3E9D9]" : "border-line bg-white/60 text-ink/70"
+          }`}
+        >
+          <input type="checkbox" className="h-4 w-4 accent-forest-700" checked={subscribe} onChange={onToggleSubscribe} />
+          {discountPct > 0 ? `Subscribe & save ${discountPct}%` : "Subscribe"}
         </label>
       )}
       <p className="mt-auto pt-3 text-[17px]">
-        <span className="font-bold text-forest-700">{formatMoney(product.price)}</span>
+        <span className="font-bold text-forest-700">
+          {formatMoney(subscribe && product.available ? subscribeUnit(product.price, discountPct) : product.price)}
+        </span>
         <span className="text-forest-700"> / ea</span>
+        {subscribe && product.available && discountPct > 0 && (
+          <span className="ml-2 text-[13px] text-ink/45 line-through">{formatMoney(product.price)}</span>
+        )}
         {product.variantTitle && <span className="ml-2 text-[12px] text-ink/50">{product.variantTitle}</span>}
       </p>
       <div className="mt-2.5">
@@ -178,6 +223,9 @@ export default function Shop() {
   const { customerId, order, editableOrders, collections, products } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const [cart, setCart] = useState<CartLine[]>(() => initialCart(order));
+  // Subscribe choice for products not yet in the order. Defaults to subscription;
+  // unticking before Add makes the item a one-time pick for this delivery.
+  const [pendingSubscribe, setPendingSubscribe] = useState<Record<string, boolean>>({});
   const [activeCollection, setActiveCollection] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<keyof typeof SORTS>("relevance");
@@ -186,9 +234,13 @@ export default function Shop() {
 
   useEffect(() => setCart(initialCart(order)), [order]);
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) {
-      setToast({ message: "Order changes captured — UI preview, not saved to Recharge yet." });
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (fetcher.data.ok) {
+      setToast({ message: `Saved — your ${order ? formatDeliveryChip(order.deliveryDate) : ""} delivery is updated.` });
+    } else {
+      setToast({ message: fetcher.data.error, tone: "error" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetcher.state, fetcher.data]);
 
   const byVariant = useMemo(() => new Map(cart.map((l) => [l.variantId, l])), [cart]);
@@ -209,12 +261,29 @@ export default function Shop() {
   const add = (p: ShopProductVM) =>
     setCart((c) => [
       ...c,
-      { variantId: p.variantId, title: p.title, imageUrl: p.imageUrl, unitPrice: p.price, quantity: 1, subscription: false, variantTitle: p.variantTitle },
+      {
+        variantId: p.variantId,
+        title: p.title,
+        imageUrl: p.imageUrl,
+        listPrice: p.price,
+        quantity: 1,
+        subscription: pendingSubscribe[p.variantId] ?? true,
+        variantTitle: p.variantTitle,
+      },
     ]);
-  const toggleSub = (variantId: string) =>
-    setCart((c) => c.map((l) => (l.variantId === variantId ? { ...l, subscription: !l.subscription } : l)));
+  const toggleSub = (variantId: string) => {
+    if (byVariant.has(variantId)) {
+      setCart((c) => c.map((l) => (l.variantId === variantId ? { ...l, subscription: !l.subscription } : l)));
+    } else {
+      setPendingSubscribe((p) => ({ ...p, [variantId]: !(p[variantId] ?? true) }));
+    }
+  };
 
-  const subtotal = cart.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+  const pct = order?.subscribeDiscountPct ?? 0;
+  const subtotal = round2(cart.reduce((s, l) => s + unitPriceOf(l, pct) * l.quantity, 0));
+  const savings = round2(cart.reduce((s, l) => s + (l.listPrice - unitPriceOf(l, pct)) * l.quantity, 0));
+  const dirty = cartKey(cart) !== cartKey(initialCart(order));
+  const saving = fetcher.state !== "idle";
   const minimum = order?.orderMinimum ?? 0;
   const metMinimum = subtotal >= minimum;
   const activeTitle = activeCollection === "all" ? "Shop All" : collections.find((c) => c.id === activeCollection)?.title ?? "Shop All";
@@ -279,6 +348,8 @@ export default function Shop() {
                   key={p.variantId}
                   product={p}
                   line={byVariant.get(p.variantId)}
+                  subscribe={byVariant.get(p.variantId)?.subscription ?? pendingSubscribe[p.variantId] ?? true}
+                  discountPct={pct}
                   onAdd={() => add(p)}
                   onQty={(q) => setQty(p.variantId, q)}
                   onToggleSubscribe={() => toggleSub(p.variantId)}
@@ -342,19 +413,30 @@ export default function Shop() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-[14px] font-medium leading-tight text-forest">{l.title}</p>
-                          <p className="mt-1 text-[11px]">{formatMoney(l.unitPrice)} / ea</p>
+                          <p className="mt-1 text-[11px]">
+                            {l.subscription && unitPriceOf(l, pct) < l.listPrice && (
+                              <span className="mr-1 text-ink/45 line-through">{formatMoney(l.listPrice)}</span>
+                            )}
+                            {formatMoney(unitPriceOf(l, pct))} / ea
+                          </p>
                           <span className="mt-1.5 inline-block rounded bg-[#F2F0E8] px-1.5 py-0.5 text-[11px] font-medium">
                             {l.subscription ? "Subscription" : "One-time"}
                           </span>
                         </div>
                         <div className="flex flex-col items-center">
                           <Stepper size="sm" quantity={l.quantity} onChange={(q) => setQty(l.variantId, q)} />
-                          <span className="mt-1.5 text-[11px] font-medium">{formatMoney(l.unitPrice * l.quantity)}</span>
+                          <span className="mt-1.5 text-[11px] font-medium">{formatMoney(unitPriceOf(l, pct) * l.quantity)}</span>
                         </div>
                       </li>
                     ))}
                   </ul>
                   <div className="border-t border-line bg-cream-light px-5 py-4">
+                    {savings > 0 && (
+                      <div className="mb-1.5 flex items-center justify-between text-[13px] text-forest-700">
+                        <span>Subscriber savings ({pct}%)</span>
+                        <span>−{formatMoney(savings)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-[15px] font-medium">
                       <span>Estimated subtotal</span>
                       <span>{formatMoney(subtotal)}</span>
@@ -362,15 +444,25 @@ export default function Shop() {
                     <button
                       type="button"
                       className="btn-forest-lg mt-3 w-full rounded-full"
+                      disabled={!dirty || saving}
                       onClick={() =>
                         fetcher.submit(
-                          { intent: "save_order", chargeId: String(order.chargeId), lines: JSON.stringify(cart) },
+                          {
+                            intent: "save_order",
+                            chargeId: String(order.chargeId),
+                            lines: JSON.stringify(
+                              cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity, subscription: l.subscription }))
+                            ),
+                          },
                           { method: "post" }
                         )
                       }
                     >
-                      Save Changes
+                      {saving ? "Saving…" : dirty ? "Save Changes" : "No changes to save"}
                     </button>
+                    <p className="mt-2 text-center text-[11px] text-ink/60">
+                      Changes apply to your {formatDeliveryChip(order.deliveryDate)} delivery only.
+                    </p>
                     <Link to={`/${customerId}`} className="mt-2 block text-center text-[12px] text-forest-700 underline">Back to upcoming orders</Link>
                   </div>
                 </>

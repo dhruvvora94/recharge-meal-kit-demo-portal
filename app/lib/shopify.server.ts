@@ -255,3 +255,88 @@ export async function setCustomerTags(_shopifyCustomerId: string, _tags: string[
 
 // Walden shop tabs: every collection (smart + manual) published to Headless.
 export const listShopCollections = listBundleCollections;
+
+// ─── Selling plan discounts ─────────────────────────────────────────────────
+// The subscribe-and-save discount lives on each product's Shopify selling plan
+// (created by Recharge). Recharge plans carry the frequency in the
+// "Order Frequency and Unit" option, e.g. "1-month".
+
+export type SellingPlanDiscount = {
+  /** "1-month", "2-month" … from the plan's "Order Frequency and Unit" option */
+  frequency: string | null;
+  percentage: number | null;
+  fixedAmount: number | null;
+  fixedPrice: number | null;
+};
+
+export async function getSellingPlanDiscounts(productIds: string[]): Promise<Map<string, SellingPlanDiscount[]>> {
+  const unique = [...new Set(productIds.filter(Boolean).map(String))];
+  const out = new Map<string, SellingPlanDiscount[]>();
+  for (let i = 0; i < unique.length; i += 100) {
+    const batch = unique.slice(i, i + 100);
+    const data: {
+      nodes: Array<{
+        id: string;
+        sellingPlanGroups?: {
+          nodes: Array<{
+            sellingPlans: {
+              nodes: Array<{
+                options: Array<{ name: string; value: string }>;
+                priceAdjustments: Array<{
+                  adjustmentValue:
+                    | { __typename: "SellingPlanPercentagePriceAdjustment"; adjustmentPercentage: number }
+                    | { __typename: "SellingPlanFixedAmountPriceAdjustment"; adjustmentAmount: { amount: string } }
+                    | { __typename: "SellingPlanFixedPriceAdjustment"; price: { amount: string } };
+                }>;
+              }>;
+            };
+          }>;
+        };
+      } | null>;
+    } = await storefrontQuery(
+      `query SellingPlanDiscounts($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Product {
+            id
+            sellingPlanGroups(first: 10) {
+              nodes {
+                sellingPlans(first: 20) {
+                  nodes {
+                    options { name value }
+                    priceAdjustments {
+                      adjustmentValue {
+                        __typename
+                        ... on SellingPlanPercentagePriceAdjustment { adjustmentPercentage }
+                        ... on SellingPlanFixedAmountPriceAdjustment { adjustmentAmount { amount } }
+                        ... on SellingPlanFixedPriceAdjustment { price { amount } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      { ids: batch.map((id) => (id.startsWith("gid://") ? id : `gid://shopify/Product/${id}`)) }
+    );
+    for (const node of data.nodes) {
+      if (!node?.sellingPlanGroups) continue;
+      const plans = node.sellingPlanGroups.nodes.flatMap((g) => g.sellingPlans.nodes);
+      out.set(
+        String(gidToNumber(node.id)),
+        plans.map((p) => {
+          const adj = p.priceAdjustments[0]?.adjustmentValue;
+          return {
+            frequency:
+              p.options.find((o) => /frequency/i.test(o.name))?.value?.toLowerCase().replace(/\s+/g, "-") ?? null,
+            percentage: adj?.__typename === "SellingPlanPercentagePriceAdjustment" ? adj.adjustmentPercentage : null,
+            fixedAmount: adj?.__typename === "SellingPlanFixedAmountPriceAdjustment" ? Number(adj.adjustmentAmount.amount) : null,
+            fixedPrice: adj?.__typename === "SellingPlanFixedPriceAdjustment" ? Number(adj.price.amount) : null,
+          };
+        })
+      );
+    }
+  }
+  return out;
+}

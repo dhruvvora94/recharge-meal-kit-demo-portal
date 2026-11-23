@@ -13,6 +13,9 @@ export type LineVM = {
   externalVariantId: string | null;
   /** subscription / onetime purchase item id, when there is one */
   purchaseItemId: number | null;
+  /** Shopify list price per unit, when it differs from what's charged (subscribe & save) */
+  listUnitPrice: number | null;
+  subscription: boolean;
 };
 
 export type AddressVM = {
@@ -50,6 +53,10 @@ export type UpcomingOrderVM = {
   currency: string;
   orderMinimum: number;
   belowMinimum: boolean;
+  /** Selling plan subscribe-and-save %, e.g. 10 */
+  subscribeDiscountPct: number;
+  /** List price minus charged price across subscription lines */
+  savings: number;
   oneTimePicks: LineVM[];
   subscriptions: LineVM[];
   address: AddressVM | null;
@@ -63,6 +70,7 @@ export type PlanVM = {
   nickname: string | null;
   frequencyLabel: string; // "Monthly", "Every 2 Months"
   orderMinimum: number;
+  subscribeDiscountPct: number;
   address: AddressVM | null;
   addOns: LineVM[];
   status: string;

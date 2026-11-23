@@ -274,10 +274,11 @@ export async function listBundleSelectionsByPurchaseItemIds(purchaseItemIds: num
     if (charge_id == null) {
       defaultsByPurchaseItem.set(selection.purchase_item_id, {
         external_product_id: selection.external_product_id ?? null,
-        items: selection.items.map(({ collection_id, external_variant_id, quantity }) => ({
+        items: selection.items.map(({ collection_id, external_variant_id, quantity, price }) => ({
           collection_id,
           external_variant_id,
           quantity,
+          price,
         })),
       });
     } else {
@@ -414,6 +415,8 @@ export async function updateBundleSelection(
 export async function createOnetime(payload: {
   address_id: number;
   next_charge_scheduled_at: string;
+  product_title?: string;
+  variant_title?: string;
   external_product_id: { ecommerce: string };
   external_variant_id: { ecommerce: string };
   quantity: number;
@@ -427,6 +430,27 @@ export async function createOnetime(payload: {
 
 export async function deleteOnetime(onetimeId: number): Promise<void> {
   await api(`/onetimes/${onetimeId}`, { method: "DELETE" });
+}
+
+const OnetimeSchema = z.object({
+  id: z.number(),
+  address_id: z.number(),
+  next_charge_scheduled_at: z.string().nullable().optional(),
+  quantity: z.number(),
+  price: z.string().nullable().optional(),
+  product_title: z.string().nullable().optional(),
+  external_variant_id: z.object({ ecommerce: z.string().nullable().optional() }).nullable().optional(),
+  external_product_id: z.object({ ecommerce: z.string().nullable().optional() }).nullable().optional(),
+});
+export type Onetime = z.infer<typeof OnetimeSchema>;
+
+export async function listOnetimes(customerId: string): Promise<Onetime[]> {
+  const data = await api<{ onetimes: unknown[] }>(`/onetimes?customer_id=${customerId}&limit=250`);
+  return z.array(OnetimeSchema).parse(data.onetimes);
+}
+
+export async function updateOnetimeQuantity(onetimeId: number, quantity: number): Promise<void> {
+  await api(`/onetimes/${onetimeId}`, { method: "PUT", body: JSON.stringify({ quantity }) });
 }
 
 // ─── Addresses ────────────────────────────────────────────────────────────────

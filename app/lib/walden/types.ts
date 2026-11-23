@@ -38,7 +38,7 @@ export type AddressVM = {
 export type DeliveryOptionVM = {
   deliveryDate: string; // ISO
   chargeDate: string; // ISO
-  editDeadline: string; // ISO
+  editDeadline: string | null; // ISO, null when edits never lock
 };
 
 export type UpcomingOrderVM = {
@@ -47,7 +47,7 @@ export type UpcomingOrderVM = {
   planTitle: string;
   deliveryDate: string; // ISO
   chargeDate: string; // ISO
-  editDeadline: string; // ISO
+  editDeadline: string | null; // ISO, null when edits never lock
   locked: boolean;
   estimatedTotal: number;
   currency: string;

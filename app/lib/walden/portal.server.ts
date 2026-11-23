@@ -25,6 +25,7 @@ import {
   type ShopifyProduct,
 } from "~/lib/shopify.server";
 import { getAddonCollectionIds } from "~/lib/addon-collections.server";
+import { getMerchantSettings } from "~/lib/merchant-settings.server";
 import type { Address, BundleProduct, Charge, ChargeLineItem, Subscription } from "~/lib/types";
 import { WALDEN } from "./config";
 import {
@@ -34,6 +35,7 @@ import {
   editDeadlineFromDelivery,
   isPastDeadline,
   toIsoDate,
+  type DateSettings,
 } from "./dates";
 import type {
   AddressVM,
@@ -95,7 +97,11 @@ function frequencyLabel(s: Subscription | undefined): string {
 // date plus the same weekday ±1 week within that month, i.e. 2–3 dates/month,
 // excluding anything whose edit deadline has already passed.
 
-export function getDeliveryOptions(_zip: string | null, currentDeliveryIso: string): DeliveryOptionVM[] {
+export function getDeliveryOptions(
+  _zip: string | null,
+  currentDeliveryIso: string,
+  settings: DateSettings
+): DeliveryOptionVM[] {
   const month = currentDeliveryIso.slice(0, 7);
   const candidates = [-7, 0, 7]
     .map((offset) => addDays(currentDeliveryIso, offset))
@@ -103,8 +109,8 @@ export function getDeliveryOptions(_zip: string | null, currentDeliveryIso: stri
   return candidates
     .map((deliveryDate) => ({
       deliveryDate,
-      chargeDate: chargeDateFromDelivery(deliveryDate),
-      editDeadline: editDeadlineFromDelivery(deliveryDate),
+      chargeDate: chargeDateFromDelivery(deliveryDate, settings),
+      editDeadline: editDeadlineFromDelivery(deliveryDate, settings),
     }))
     .filter((o) => o.deliveryDate === currentDeliveryIso || !isPastDeadline(o.editDeadline));
 }
@@ -233,6 +239,11 @@ export function bundleSubscriptionForCharge(ctx: PortalContext, charge: Charge):
   }
   if (charge.line_items.some((li) => li.purchase_item_type === "subscription")) return null;
   return subscriptionsForDraftCharge(ctx, charge).find((s) => isBundleSubscription(s, ctx.bundleProductIds)) ?? null;
+}
+
+/** /merchant date settings for the bundle variant (falls back to the active bundle). */
+export function dateSettingsFor(bundleSub: Subscription | null | undefined): DateSettings {
+  return getMerchantSettings(bundleSub?.external_variant_id?.ecommerce ?? undefined);
 }
 
 // ─── Line builders ────────────────────────────────────────────────────────────
@@ -368,8 +379,9 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
 
     const linesTotal = money([...oneTimePicks, ...subscriptionLines].reduce((sum, l) => sum + l.lineTotal, 0));
     const estimatedTotal = money(charge.total_price) || linesTotal;
-    const deliveryDate = deliveryDateFromCharge(charge.scheduled_at);
-    const editDeadline = editDeadlineFromDelivery(deliveryDate);
+    const settings = dateSettingsFor(bundleSub);
+    const deliveryDate = deliveryDateFromCharge(charge.scheduled_at, settings);
+    const editDeadline = editDeadlineFromDelivery(deliveryDate, settings);
     const address = charge.address_id != null ? ctx.addressById.get(charge.address_id) ?? null : null;
     const firstSub = bundleSub ?? ctx.subById.get(charge.line_items.find((li) => li.purchase_item_type === "subscription")?.purchase_item_id ?? -1);
 
@@ -390,7 +402,7 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
       oneTimePicks,
       subscriptions: subscriptionLines,
       address,
-      deliveryOptions: getDeliveryOptions(address?.zip ?? null, deliveryDate),
+      deliveryOptions: getDeliveryOptions(address?.zip ?? null, deliveryDate, settings),
     };
   });
 

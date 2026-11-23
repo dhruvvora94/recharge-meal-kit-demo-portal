@@ -23,7 +23,14 @@ import {
 import { getProductsByVariantIds } from "~/lib/shopify.server";
 import type { BundleItemPayload } from "~/lib/types";
 import { deliveryDateFromCharge, editDeadlineFromDelivery, isPastDeadline } from "./dates";
-import { bundleSubscriptionForCharge, contentsFor, discountPctFor, loadPortalContext, subscribePrice } from "./portal.server";
+import {
+  bundleSubscriptionForCharge,
+  contentsFor,
+  dateSettingsFor,
+  discountPctFor,
+  loadPortalContext,
+  subscribePrice,
+} from "./portal.server";
 
 export type DesiredLine = { variantId: string; quantity: number; subscription: boolean };
 
@@ -53,19 +60,22 @@ export async function saveDeliveryEdits(customerId: string, chargeId: string, ra
   const charge = await getCharge(chargeId);
   if (String(charge.customer?.id) !== customerId) throw new SaveOrderError("That delivery isn't on your account.");
   if (charge.status !== "queued") throw new SaveOrderError("This delivery can't be edited because it isn't scheduled.");
-  const deadline = editDeadlineFromDelivery(deliveryDateFromCharge(charge.scheduled_at));
-  if (isPastDeadline(deadline)) throw new SaveOrderError("The edit window for this delivery has closed.");
   if (charge.address_id == null) throw new SaveOrderError("This delivery has no shipping address.");
+
+  const ctx = await loadPortalContext(customerId);
+  const bundleSub = bundleSubscriptionForCharge(ctx, charge);
+
+  // R-06: the edit lock is enforced here too, from the same /merchant settings.
+  const settings = dateSettingsFor(bundleSub);
+  const deadline = editDeadlineFromDelivery(deliveryDateFromCharge(charge.scheduled_at, settings), settings);
+  if (isPastDeadline(deadline)) throw new SaveOrderError("The edit window for this delivery has closed.");
 
   const desired = normalise(rawLines);
   const wantSubs = desired.filter((l) => l.subscription);
   const wantOnce = desired.filter((l) => !l.subscription);
-
-  const ctx = await loadPortalContext(customerId);
   const result: SaveResult = { bundleChanged: false, onetimesAdded: 0, onetimesUpdated: 0, onetimesRemoved: 0 };
 
   // ── Subscription items → bundle selection on this charge ──────────────────
-  const bundleSub = bundleSubscriptionForCharge(ctx, charge);
   if (wantSubs.length && !bundleSub) {
     throw new SaveOrderError("This delivery has no Build Your Own plan to add subscription items to.");
   }

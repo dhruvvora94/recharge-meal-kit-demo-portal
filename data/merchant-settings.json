@@ -1,9 +1,9 @@
 {
-  "activeBundleVariantId": "47959488430339",
+  "activeBundleVariantId": "46109162045510",
   "bundles": {
-    "47959488430339": {
+    "46109162045510": {
       "deliveryDateOffset": 3,
-      "modificationWindowDays": 2
+      "modificationWindowDays": 5
     }
   }
 }

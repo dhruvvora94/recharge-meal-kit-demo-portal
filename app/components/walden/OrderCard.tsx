@@ -75,7 +75,7 @@ export function OrderCard({ order, actions }: { order: UpcomingOrderVM; actions:
               Change Delivery Date
             </button>
           )}
-          {!skipped && (
+          {!skipped && order.editDeadline && (
             <p className="mt-2.5 text-[11px] text-ink/70">
               {order.locked ? "Edits closed " : "Edit by "}
               <span className="font-semibold text-ink">{formatShortDate(order.editDeadline)}</span>

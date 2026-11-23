@@ -6,17 +6,8 @@ export const WALDEN = {
   /** Build Your Own order minimum (R-08). Orders under this won't ship. */
   orderMinimum: 149.99,
 
-  /**
-   * Charge → delivery gap. Walden captures payment ~3 business days before
-   * delivery, when the order is locked to a route (R-03).
-   */
-  captureBusinessDaysBeforeDelivery: 3,
-
-  /**
-   * Edit window closes (card authorised) ~5 business days before delivery.
-   * After this the order is read-only in the portal (R-06).
-   */
-  editCutoffBusinessDaysBeforeDelivery: 5,
+  // Charge → delivery offset and the edit lock window come from /merchant
+  // (data/merchant-settings.json), per bundle variant. See walden/dates.ts.
 
   /** Label shown above the plan card when we can't infer one from the bundle. */
   defaultPlanTitle: "Build Your Own",

@@ -84,7 +84,7 @@ export function ChangeDateModal({
             </div>
             <div className="flex justify-between py-3">
               <dt className="text-ink/70">Edit deadline</dt>
-              <dd className="font-semibold">{option ? formatShortDate(option.editDeadline) : "—"}</dd>
+              <dd className="font-semibold">{option?.editDeadline ? formatShortDate(option.editDeadline) : "No cutoff"}</dd>
             </div>
             <div className="flex justify-between py-3">
               <dt className="text-ink/70">Estimated total</dt>

@@ -4,6 +4,7 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { listSuccessCharges } from "~/lib/recharge.server";
 import { requireCustomerOwnsId } from "~/lib/auth.server";
 import { deliveryDateFromCharge, formatLongDate } from "~/lib/walden/dates";
+import { getMerchantSettings } from "~/lib/merchant-settings.server";
 import { PageShell } from "~/components/walden/Layout";
 import { formatMoney } from "~/components/walden/ui";
 
@@ -13,11 +14,11 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   const customerId = params.customerId!;
   await requireCustomerOwnsId(request, customerId);
   const charges = await listSuccessCharges(customerId);
-  return json({ customerId, charges });
+  return json({ customerId, charges, dateSettings: getMerchantSettings() });
 }
 
 export default function OrderHistory() {
-  const { customerId, charges } = useLoaderData<typeof loader>();
+  const { customerId, charges, dateSettings } = useLoaderData<typeof loader>();
   return (
     <PageShell customerId={customerId}>
       <div className="mx-auto max-w-[920px] px-4 pt-11 pb-6">
@@ -31,7 +32,7 @@ export default function OrderHistory() {
         ) : (
           <div className="divide-y divide-line border border-line">
             {charges.map((c) => {
-              const delivered = deliveryDateFromCharge((c.processed_at ?? c.scheduled_at).slice(0, 10));
+              const delivered = deliveryDateFromCharge((c.processed_at ?? c.scheduled_at).slice(0, 10), dateSettings);
               return (
                 <div key={c.id} className="grid grid-cols-[232px_1fr]">
                   <div className="bg-cream px-6 py-6 text-center">

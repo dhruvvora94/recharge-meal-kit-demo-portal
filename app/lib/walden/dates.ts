@@ -2,7 +2,12 @@
 // and server. All dates are ISO "YYYY-MM-DD" strings handled in UTC so they
 // never drift across time zones.
 
-import { WALDEN } from "./config";
+/**
+ * Date rules from /merchant, per bundle variant:
+ *   deliveryDateOffset      delivery = charge date + N days
+ *   modificationWindowDays  edits lock N days before delivery (0 = never lock)
+ */
+export type DateSettings = { deliveryDateOffset: number; modificationWindowDays: number };
 
 export function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -36,20 +41,26 @@ export function addDays(iso: string, days: number): string {
 }
 
 /** Recharge stores the charge date; Walden's member-facing date is delivery. */
-export function deliveryDateFromCharge(chargeScheduledAt: string): string {
-  return addBusinessDays(chargeScheduledAt, WALDEN.captureBusinessDaysBeforeDelivery);
+export function deliveryDateFromCharge(chargeScheduledAt: string, settings: DateSettings): string {
+  return addDays(chargeScheduledAt, settings.deliveryDateOffset);
 }
 
-export function chargeDateFromDelivery(deliveryIso: string): string {
-  return addBusinessDays(deliveryIso, -WALDEN.captureBusinessDaysBeforeDelivery);
+export function chargeDateFromDelivery(deliveryIso: string, settings: DateSettings): string {
+  return addDays(deliveryIso, -settings.deliveryDateOffset);
 }
 
-export function editDeadlineFromDelivery(deliveryIso: string): string {
-  return addBusinessDays(deliveryIso, -WALDEN.editCutoffBusinessDaysBeforeDelivery);
+/**
+ * Last day the member can still edit (the day before the lock starts), or null
+ * when the modification window is off. Matches /merchant's isChargeLocked: the
+ * order is locked from (delivery − window) onwards.
+ */
+export function editDeadlineFromDelivery(deliveryIso: string, settings: DateSettings): string | null {
+  if (settings.modificationWindowDays <= 0) return null;
+  return addDays(deliveryIso, -settings.modificationWindowDays - 1);
 }
 
-export function isPastDeadline(deadlineIso: string, today: Date = new Date()): boolean {
-  return toIsoDate(today) > deadlineIso;
+export function isPastDeadline(deadlineIso: string | null, today: Date = new Date()): boolean {
+  return deadlineIso != null && toIsoDate(today) > deadlineIso;
 }
 
 export function formatLongDate(iso: string): string {

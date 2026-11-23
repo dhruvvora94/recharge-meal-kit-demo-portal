@@ -72,7 +72,7 @@ function titleCase(s: string): string {
 function lineFromChargeItem(li: ChargeLineItem): LineVM {
   const unit = money(li.unit_price);
   return {
-    key: `${li.purchase_item_type ?? "item"}-${li.purchase_item_id}`,
+    key: `${li.purchase_item_type ?? "item"}-${li.purchase_item_id}-${li.external_variant_id?.ecommerce ?? li.title}`,
     title: li.title,
     quantityLabel: quantityLabel(li.quantity, li.variant_title),
     quantity: li.quantity,
@@ -211,7 +211,11 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
   for (const charge of upcoming) {
     for (const li of charge.line_items) {
       const sub = subById.get(li.purchase_item_id);
-      if (li.purchase_item_type === "subscription" && isBundleSubscription(sub, bundleProductIds)) {
+      if (
+        li.purchase_item_type === "subscription" &&
+        isBundleSubscription(sub, bundleProductIds) &&
+        li.external_product_id?.ecommerce === sub!.external_product_id?.ecommerce
+      ) {
         contentsFor(charge.id, sub!).forEach((c) => contentVariantIds.add(c.variantId));
       }
     }
@@ -223,6 +227,7 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
   const orders: UpcomingOrderVM[] = upcoming.map((charge) => {
     const oneTimePicks: LineVM[] = [];
     const subscriptionLines: LineVM[] = [];
+    const expandedBundles = new Set<number>();
     let planTitle: string | null = null;
 
     for (const li of charge.line_items) {
@@ -232,10 +237,21 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
       }
       const sub = subById.get(li.purchase_item_id);
       if (isBundleSubscription(sub, bundleProductIds)) {
-        planTitle ??= titleCase(li.title || sub!.product_title);
-        for (const c of contentsFor(charge.id, sub!)) {
-          const line = lineFromVariant(c.variantId, c.quantity, productsByVariant.get(c.variantId), `bundle-${li.purchase_item_id}`);
-          if (line) subscriptionLines.push(line);
+        planTitle ??= titleCase(sub!.product_title);
+        // Recharge normally expands a bundle into its content line items on the
+        // charge (each carrying the bundle subscription's purchase_item_id), at
+        // the price that will actually be charged. Only when the charge holds a
+        // single parent bundle line do we expand contents ourselves.
+        const isParentLine = li.external_product_id?.ecommerce === sub!.external_product_id?.ecommerce;
+        if (isParentLine) {
+          if (expandedBundles.has(li.purchase_item_id)) continue;
+          expandedBundles.add(li.purchase_item_id);
+          for (const c of contentsFor(charge.id, sub!)) {
+            const line = lineFromVariant(c.variantId, c.quantity, productsByVariant.get(c.variantId), `bundle-${li.purchase_item_id}`);
+            if (line) subscriptionLines.push(line);
+          }
+        } else {
+          subscriptionLines.push(lineFromChargeItem(li));
         }
       } else {
         subscriptionLines.push(lineFromChargeItem(li));
@@ -281,8 +297,22 @@ export async function buildUpcomingOrders(customerId: string): Promise<{
 // ─── Plans ────────────────────────────────────────────────────────────────────
 
 export async function buildPlans(customerId: string): Promise<{ plans: PlanVM[]; addresses: AddressVM[] }> {
-  const { subscriptions, addresses, bundleProducts } = await loadCustomerData(customerId);
+  const { subscriptions, charges, addresses, bundleProducts } = await loadCustomerData(customerId);
   const addressById = new Map(addresses.map((a) => [a.id, toAddressVM(a)]));
+
+  // What a bundle plan ships: its content lines on the next queued charge.
+  const bundleContents = (sub: Subscription): LineVM[] => {
+    const next = charges.find(
+      (c) => c.status === "queued" && c.line_items.some((li) => li.purchase_item_id === sub.id)
+    );
+    return (next?.line_items ?? [])
+      .filter(
+        (li) =>
+          li.purchase_item_id === sub.id &&
+          li.external_product_id?.ecommerce !== sub.external_product_id?.ecommerce
+      )
+      .map(lineFromChargeItem);
+  };
   const bundleProductIds = new Set(bundleProducts.map((p) => p.external_product_id));
   const active = subscriptions.filter((s) => s.status === "active");
 
@@ -299,7 +329,10 @@ export async function buildPlans(customerId: string): Promise<{ plans: PlanVM[];
     frequencyLabel: frequencyLabel(anchor),
     orderMinimum: WALDEN.orderMinimum,
     address: addressById.get(anchor.address_id) ?? null,
-    addOns: addOnsAll.filter((s) => s.address_id === anchor.address_id).map(lineFromSubscription),
+    addOns: [
+      ...bundleContents(anchor),
+      ...addOnsAll.filter((s) => s.address_id === anchor.address_id).map(lineFromSubscription),
+    ],
     status: anchor.status,
   }));
 
